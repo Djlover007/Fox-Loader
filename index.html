@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fox Loader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one-screen app shell. Header, scrolling main area, bottom navigation. Sheets slide up from the bottom. */
+:root{
+  --bg:#f7f5f2; --surface:#ffffff; --surface2:#efebe6; --fg:#17130f; --muted:#6f685f; --line:#e6e0d9;
+  --accent:#e8640c; --accent-ink:#ffffff; --accent-soft:#fde6d4;
+  --green:#14a37f; --green-soft:#d9f2ea; --brand:#111114; --good:#178a5a; --good-soft:#dcf3e6; --bad:#d0342c; --bad-soft:#fbe3e1;
+  --shadow:rgba(40,24,10,.14);
+  --font-display:'Bricolage Grotesque','Figtree',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-body:'Figtree',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c0c0f;--surface:#18181d;--surface2:#232329;--fg:#f4f4f6;--muted:#a4a4ae;--line:#2b2b32;
+    --accent:#ff7a1a;--accent-ink:#1b0c02;--accent-soft:rgba(255,122,26,.16);
+    --green:#2cc79c;--green-soft:rgba(44,199,156,.15);--good:#4cd08f;--good-soft:rgba(76,208,143,.14);--bad:#ff6f61;--bad-soft:rgba(255,111,97,.14);
+    --shadow:rgba(0,0,0,.55);color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c0c0f;--surface:#18181d;--surface2:#232329;--fg:#f4f4f6;--muted:#a4a4ae;--line:#2b2b32;
+  --accent:#ff7a1a;--accent-ink:#1b0c02;--accent-soft:rgba(255,122,26,.16);
+  --green:#2cc79c;--green-soft:rgba(44,199,156,.15);--good:#4cd08f;--good-soft:rgba(76,208,143,.14);--bad:#ff6f61;--bad-soft:rgba(255,111,97,.14);
+  --shadow:rgba(0,0,0,.55);color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--fg);font:400 16px/1.45 var(--font-body);
+  padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* Kopf */
+.head{display:flex;align-items:center;gap:10px;padding:12px 16px 6px;flex:none}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--brand);display:grid;place-items:center;flex:none}
+.logo svg{width:30px;height:30px}
+.brand{flex:1;min-width:0;display:flex;flex-direction:column}
+.brand b{font:800 25px/1.05 var(--font-display);letter-spacing:-.02em}
+.brand small{font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:2px}
+.brand small span{color:var(--accent);font-weight:700}
+.ib{width:44px;height:44px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:var(--fg)}
+.ib:active{background:var(--surface2)}
+
+main{flex:1;min-height:0;overflow-y:auto;padding:6px 16px 24px;-webkit-overflow-scrolling:touch}
+.view{display:flex;flex-direction:column;gap:14px;max-width:680px;margin:0 auto}
+h2{font:700 22px/1.2 var(--font-display);margin:6px 0 0;letter-spacing:-.01em;text-wrap:balance}
+.hint{color:var(--muted);font-size:14px;margin:0}
+.lbl{font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}
+
+/* Bausteine */
+.box{background:var(--surface);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 0 var(--line)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:0;border-radius:14px;padding:12px 16px;font-weight:700;font-size:15px;background:var(--surface2);color:var(--fg);display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:46px}
+.btn.pri{background:var(--accent);color:var(--accent-ink)}
+.btn.grn{background:var(--green);color:#fff}
+.btn.sm{min-height:38px;padding:7px 12px;font-size:14px;border-radius:12px}
+.btn.wide{width:100%}
+.btn:disabled{opacity:.5}
+.btn svg.i{width:18px;height:18px}
+select,input[type=text],input[type=password],textarea{width:100%;border:0;border-radius:12px;background:var(--surface2);padding:12px 14px;color:var(--fg)}
+select{height:46px;padding:0 12px;font-weight:600}
+textarea{min-height:84px;resize:none;font-size:18px;line-height:1.4}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{white-space:nowrap;flex:none;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 13px;font-weight:600;font-size:14px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chips.scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:2px 16px}
+.chips.scroll::-webkit-scrollbar{display:none}
+.chip.add{border-style:dashed;color:var(--muted)}
+
+.prog{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.empty{text-align:center;color:var(--muted);padding:28px 16px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.empty svg{width:64px;height:64px}
+
+/* Navigation unten */
+.bnav{flex:none;display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+.bnav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:12px;font-weight:600;color:var(--muted)}
+.bnav button .pill{width:56px;height:30px;border-radius:15px;display:grid;place-items:center}
+.bnav button[aria-current="page"]{color:var(--fg)}
+.bnav button[aria-current="page"] .pill{background:var(--accent-soft);color:var(--accent)}
+.bnav .badge{position:absolute;margin:-16px 0 0 24px;min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 5px}
+
+/* Blatt von unten */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--bg);border-radius:24px 24px 0 0;max-height:88%;overflow-y:auto;padding:10px 18px calc(22px + env(safe-area-inset-bottom,0px));transform:translateY(105%);transition:transform .25s ease;display:flex;flex-direction:column;gap:12px}
+.sheet.open{transform:none}
+.sheet .grip{width:40px;height:5px;border-radius:3px;background:var(--line);align-self:center;margin-bottom:4px}
+.sheet h3{font:700 21px/1.2 var(--font-display);margin:0}
+.srow{background:var(--surface);border-radius:16px;padding:13px 14px;display:flex;flex-direction:column;gap:8px}
+.srow.line{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+.srow small{color:var(--muted);font-size:13.5px}
+.sw{appearance:none;width:50px;height:30px;border-radius:15px;background:var(--line);position:relative;flex:none;transition:background .2s}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.sw:checked{background:var(--green)}
+.sw:checked::after{transform:translateX(20px)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+
+.toast{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:60;background:var(--fg);color:var(--bg);padding:13px 16px;border-radius:14px;font-size:15px;box-shadow:0 8px 24px var(--shadow);opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;pointer-events:none;max-width:560px;margin:0 auto}
+.toast.on{opacity:1;transform:none}
+.spin{display:inline-block;width:18px;height:18px;border:2.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+#splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:var(--bg);transition:opacity .45s ease,visibility 0s .45s}
+#splash.hide{opacity:0;visibility:hidden}
+#splash .sp-logo{width:104px;height:104px;border-radius:30px;display:grid;place-items:center;background:var(--brand);box-shadow:0 14px 34px var(--shadow);animation:spPop .6s cubic-bezier(.2,.9,.3,1.3) both}
+#splash .sp-logo svg{width:74px;height:74px}
+#splash b{font:800 32px/1.1 var(--font-display);letter-spacing:-.02em;margin-top:8px;animation:spUp .5s .15s ease both}
+#splash small{font-size:14px;color:var(--muted);letter-spacing:.06em;animation:spUp .5s .3s ease both}
+#splash small span{color:var(--accent);font-weight:700}
+@keyframes spPop{from{transform:scale(.6);opacity:0}}
+@keyframes spUp{from{transform:translateY(10px);opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* Fox Loader */
+.bnav{grid-template-columns:repeat(2,1fr)}
+.logo,#splash .sp-logo{box-shadow:inset 0 0 0 1px var(--line)}
+.inrow{display:flex;gap:8px}
+.inrow input{flex:1;min-width:0;font-size:16px}
+.hero{background:var(--surface);border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 0 var(--line)}
+.hero h2{margin:0}
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.how div{background:var(--surface);border-radius:14px;padding:10px 6px;text-align:center;font-size:12.5px;font-weight:600;color:var(--muted)}
+.how b{display:block;font:800 18px/1.1 var(--font-display);color:var(--accent)}
+.tw{display:flex;gap:10px;align-items:center}
+.tw img{width:42px;height:42px;border-radius:50%;background:var(--surface2);flex:none;object-fit:cover}
+.tw .tx{flex:1;min-width:0}
+.tw .tx b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tw .tx small{color:var(--muted)}
+.ttext{margin:0;font-size:15px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.med{background:var(--surface);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 0 var(--line)}
+.med .pv{position:relative;background:#000;aspect-ratio:16/9;display:grid;place-items:center}
+.med .pv img{width:100%;height:100%;object-fit:contain}
+.med .pv .tag{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.7);color:#fff;font-size:12.5px;font-weight:700;padding:4px 9px;border-radius:999px}
+.med .pv .pl{position:absolute;width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,.55);display:grid;place-items:center;color:#fff}
+.med .pv .pl svg{width:26px;height:26px;fill:#fff;stroke:none}
+.med .bd{padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.ok{display:flex;gap:8px;align-items:center;color:var(--good);font-weight:700}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:16px;padding:12px 14px;font-size:14.5px}
+.hist{background:var(--surface);border-radius:18px;padding:10px;display:flex;gap:12px;align-items:center}
+.hist .th{width:76px;height:76px;border-radius:12px;background:var(--surface2) center/cover no-repeat;flex:none;display:grid;place-items:center;color:var(--muted)}
+.hist .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.hist .tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist .tx small{color:var(--muted);font-size:13px}
+.hist .acts{display:flex;gap:4px;margin-top:4px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="fox" viewBox="0 0 112 108">
+      <polygon fill="#F57C1F" points="12,10 38,30 62,30 88,10 93,50 50,93 7,50"/><polygon fill="#FFF1DC" points="7,50 38,60 50,93"/><polygon fill="#FFF1DC" points="93,50 62,60 50,93"/><polygon fill="#D65C0C" points="17,19 31,31 18,42"/><polygon fill="#D65C0C" points="83,19 69,31 82,42"/><polygon fill="#2A1608" points="30,47 42,52 31,54"/><polygon fill="#2A1608" points="70,47 58,52 69,54"/><polygon fill="#2A1608" points="43,81 57,81 50,93"/>
+      <circle cx="83" cy="83" r="21" fill="#fff"/><circle cx="83" cy="83" r="18" fill="#F57C1F"/><path d="M83 72v16" stroke="#fff" stroke-width="5" stroke-linecap="round"/><polygon fill="#fff" points="74,83 92,83 83,94"/>
+    </symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  </defs>
+</svg>
+
+<div id="splash" aria-hidden="true"><div class="sp-logo"><svg viewBox="0 0 112 108"><use href="#fox"/></svg></div><b>Fox Loader</b><small>Design by <span>Mr.Fox</span></small></div>
+
+<header class="head">
+  <div class="logo"><svg viewBox="0 0 112 108" aria-hidden="true"><use href="#fox"/></svg></div>
+  <div class="brand"><b>Fox Loader</b><small>X-Videos <span>speichern</span></small></div>
+  <button class="ib" data-act="settings" aria-label="Einstellungen"><svg class="i"><use href="#i-gear"/></svg></button>
+</header>
+
+<main id="main"></main>
+
+<nav class="bnav" id="bnav" aria-label="Navigation">
+  <button data-tab="load" aria-current="page"><span class="pill"><svg class="i"><use href="#i-down"/></svg></span>Laden</button>
+  <button data-tab="list"><span class="pill"><svg class="i"><use href="#i-list"/></svg></span>Meine Downloads</button>
+</nav>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+'use strict';
+/* ================= Grundlagen ================= */
+var REPO='__REPO__';
+function $(s,r){return (r||document).querySelector(s);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function ic(n){return '<svg class="i"><use href="#i-'+n+'"/></svg>';}
+function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+var set=Object.assign({q:'best',autoClip:true,shareDl:true,autoUpd:true},load('fl-set',{}));
+var hist=load('fl-hist',[]);
+var tab='load', cur=null, busy=false, lastErr='', lastClip=load('fl-clip','');
+function saveSet(){save('fl-set',set);}
+function saveHist(){save('fl-hist',hist.slice(0,300));}
+
+var tT;function toast(m,ms){var t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tT);tT=setTimeout(function(){t.classList.remove('on');},ms||3800);}
+function isNative(){try{return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());}catch(e){return false;}}
+function plug(name){
+  if(!isNative())return null;
+  try{return (Capacitor.Plugins&&Capacitor.Plugins[name])||Capacitor.registerPlugin(name);}catch(e){return null;}
+}
+async function fetchT(url,opt,ms){
+  var ctl=new AbortController(),t=setTimeout(function(){ctl.abort();},ms||15000);
+  try{return await fetch(url,Object.assign({signal:ctl.signal},opt||{}));}finally{clearTimeout(t);}
+}
+function errText(e){return String((e&&e.message)||e||'Unbekannter Fehler');}
+function tm(s){s=Math.max(0,Math.round(s||0));var m=Math.floor(s/60),x=s%60;return m+':'+(x<10?'0':'')+x;}
+function mb(b){if(!b)return '';return b<1048576?Math.max(1,Math.round(b/1024))+' KB':(b/1048576).toFixed(1).replace('.',',')+' MB';}
+function dateDE(t){var d=new Date(t);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+', '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}
+
+var L=plug('Loader');
+if(L){try{L.addListener('progress',function(e){
+  if(!cur)return;var k=String(e.id||'');var d=cur.dl[k];if(!d)return;
+  d.pct=e.pct;d.got=e.got;
+  var a=document.getElementById('pp-'+k),b=document.getElementById('pb-'+k);
+  if(a)a.textContent=(e.pct>=0?e.pct+' % · ':'')+mb(e.got);
+  if(b)b.style.width=(e.pct>=0?e.pct:30)+'%';
+});}catch(x){}}
+
+/* ================= Link erkennen ================= */
+function findId(t){
+  t=String(t||'');
+  var m=t.match(/(?:x|twitter|fxtwitter|vxtwitter|fixupx|fixvx|twittpr)\.com\/(?:[^\/\s?#]+\/status(?:es)?|i\/(?:web\/)?status)\/(\d{5,25})/i);
+  if(m)return m[1];
+  m=t.trim().match(/^(\d{8,25})$/);
+  return m?m[1]:null;
+}
+function findShort(t){var m=String(t||'').match(/https?:\/\/t\.co\/[A-Za-z0-9]+/);return m?m[0].replace(/^http:/,'https:'):null;}
+function hasLink(t){return !!(findId(t)||findShort(t));}
+
+async function httpJson(url){
+  var r=await L.get({url:url});
+  if(r.status!==200)throw new Error('HTTP '+r.status);
+  try{return JSON.parse(r.body);}catch(e){throw new Error('Antwort nicht lesbar');}
+}
+function qLabel(url,w,h){
+  var m=String(url).match(/\/(\d{2,4})x(\d{2,4})\//);
+  if(m){w=+m[1];h=+m[2];}
+  if(!w||!h)return '';
+  return Math.min(w,h)+'p';
+}
+function origPhoto(u){
+  var m=String(u).match(/^(https:\/\/pbs\.twimg\.com\/media\/[^.?]+)\.(jpg|jpeg|png|webp)/i);
+  if(m)return m[1]+'?format='+(m[2].toLowerCase()==='png'?'png':'jpg')+'&name=orig';
+  return u;
+}
+function variantsOf(list){
+  var v=(list||[]).filter(function(x){return x&&x.url&&/mp4/i.test(x.content_type||x.type||'mp4')&&!/\.m3u8/i.test(x.url);})
+    .map(function(x){return {url:x.url,bitrate:x.bitrate||0,label:qLabel(x.url)};});
+  var seen={};v=v.filter(function(x){if(seen[x.url])return false;seen[x.url]=1;return true;});
+  v.sort(function(a,b){return (b.bitrate||parseInt(b.label)||0)-(a.bitrate||parseInt(a.label)||0);});
+  return v;
+}
+
+// Quelle 1: Twitter-Einbettung (gleiche Daten wie eingebettete Tweets auf Webseiten)
+async function viaSyndication(id){
+  var token=((Number(id)/1e15)*Math.PI).toString(36).replace(/(0+|\.)/g,'');
+  var j=await httpJson('https://cdn.syndication.twimg.com/tweet-result?id='+id+'&lang=de&token='+token);
+  if(!j||j.__typename==='TweetTombstone')throw new Error('Tweet gesperrt oder nicht öffentlich');
+  function med(t){
+    return (t&&t.mediaDetails||[]).map(function(m){
+      if(m.type==='photo')return {kind:'image',thumb:m.media_url_https,variants:[{url:origPhoto(m.media_url_https),label:'Original'}]};
+      var vi=m.video_info||{};
+      return {kind:'video',gif:m.type==='animated_gif',thumb:m.media_url_https,dur:(vi.duration_millis||0)/1000,variants:variantsOf(vi.variants)};
+    });
+  }
+  var media=med(j);
+  if(!media.length&&j.quoted_tweet)media=med(j.quoted_tweet);
+  return {id:id,text:j.text||'',name:(j.user&&j.user.name)||'',handle:(j.user&&j.user.screen_name)||'',avatar:(j.user&&j.user.profile_image_url_https)||'',media:media};
+}
+// Quelle 2: FxTwitter
+async function viaFx(id){
+  var j=await httpJson('https://api.fxtwitter.com/status/'+id);
+  var t=j&&j.tweet;if(!t)throw new Error((j&&j.message)||'nicht gefunden');
+  function med(t){
+    return ((t&&t.media&&t.media.all)||[]).map(function(m){
+      if(m.type==='photo')return {kind:'image',thumb:m.url,variants:[{url:origPhoto(m.url),label:'Original'}]};
+      var v=variantsOf(m.variants);
+      if(!v.length&&m.url)v=[{url:m.url,bitrate:0,label:qLabel(m.url,m.width,m.height)}];
+      return {kind:'video',gif:m.type==='gif',thumb:m.thumbnail_url||'',dur:m.duration||0,variants:v};
+    });
+  }
+  var media=med(t);if(!media.length&&t.quote)media=med(t.quote);
+  return {id:id,text:t.text||'',name:(t.author&&t.author.name)||'',handle:(t.author&&t.author.screen_name)||'',avatar:(t.author&&t.author.avatar_url)||'',media:media};
+}
+// Quelle 3: vxTwitter
+async function viaVx(id){
+  var j=await httpJson('https://api.vxtwitter.com/Twitter/status/'+id);
+  var media=(j.media_extended||[]).map(function(m){
+    if(m.type==='image')return {kind:'image',thumb:m.url,variants:[{url:origPhoto(m.url),label:'Original'}]};
+    var s=m.size||{};
+    return {kind:'video',gif:m.type==='gif',thumb:m.thumbnail_url||'',dur:(m.duration_millis||0)/1000,variants:[{url:m.url,bitrate:0,label:qLabel(m.url,s.width,s.height)}]};
+  });
+  return {id:id,text:j.text||'',name:j.user_name||'',handle:j.user_screen_name||'',avatar:j.user_profile_image_url||'',media:media};
+}
+async function fetchTweet(id){
+  var errs=[],best=null;
+  var src=[viaSyndication,viaFx,viaVx];
+  for(var i=0;i<src.length;i++){
+    try{
+      var r=await src[i](id);
+      r.media=r.media.filter(function(m){return m.variants&&m.variants.length;});
+      if(r.media.length)return r;
+      if(!best)best=r;
+    }catch(e){errs.push(errText(e));}
+  }
+  if(best)return best;
+  throw new Error(errs.length&&errs.every(function(x){return /404/.test(x);})?'Diesen Post gibt es nicht (mehr).':'Post nicht erreichbar. Er ist privat, gelöscht oder nur mit Anmeldung sichtbar.');
+}
+
+/* ================= Laden ================= */
+async function lookup(text,fromShare){
+  if(busy)return;
+  text=String(text||'').trim();
+  if(!text){toast('Füge zuerst einen Link von X ein.');return;}
+  var id=findId(text);
+  busy=true;lastErr='';cur=null;go('load');
+  try{
+    if(!id){
+      var s=findShort(text);
+      if(!s)throw new Error('Das ist kein Link zu einem Post auf X. Er sieht so aus: x.com/name/status/123…');
+      var r=await L.get({url:s});
+      id=findId(r.url)||findId(r.body);
+      if(!id)throw new Error('Der Kurzlink führt nicht zu einem Post.');
+    }
+    var tw=await fetchTweet(id);
+    cur={tw:tw,sel:{},dl:{}};
+    tw.media.forEach(function(m,i){cur.sel[i]=pickQ(m.variants);});
+    if(!tw.media.length)lastErr='In diesem Post ist kein Video und kein Bild.';
+  }catch(e){lastErr=errText(e);}
+  busy=false;render();
+  if(cur&&cur.tw.media.length&&fromShare&&set.shareDl){
+    cur.tw.media.forEach(function(m,i){dl(i);});
+  }
+}
+function pickQ(v){
+  if(set.q==='best'||v.length<2)return 0;
+  if(set.q==='small')return v.length-1;
+  for(var i=0;i<v.length;i++){if(parseInt(v[i].label)&&parseInt(v[i].label)<=720)return i;}
+  return Math.floor(v.length/2);
+}
+async function dl(i){
+  if(!cur||!L)return;
+  var m=cur.tw.media[i],k=cur.tw.id+'-'+i,v=m.variants[cur.sel[i]||0];
+  var d=cur.dl[k];if(d&&d.state==='run')return;
+  cur.dl[k]={state:'run',pct:0};renderLoad();
+  var name=(cur.tw.handle?cur.tw.handle+'_':'X_')+cur.tw.id+(cur.tw.media.length>1?'_'+(i+1):'')+(v.label&&v.label!=='Original'?'_'+v.label:'');
+  try{
+    var r=await L.download({id:k,url:v.url,name:name,kind:m.kind});
+    cur.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size};
+    hist.unshift({t:Date.now(),uri:r.uri,mime:r.mime,size:r.size,thumb:m.thumb,kind:m.kind,q:v.label,name:cur.tw.name,handle:cur.tw.handle,text:cur.tw.text,link:'https://x.com/'+(cur.tw.handle||'i')+'/status/'+cur.tw.id});
+    saveHist();
+    toast(m.kind==='image'?'Bild gespeichert: Galerie › Pictures/Fox Loader':'Video gespeichert: Galerie › Movies/Fox Loader');
+  }catch(e){
+    var msg=errText(e);
+    if(msg==='storage'){cur.dl[k]=null;toast('Erlaube Fox Loader den Speicher und tippe nochmal auf Laden.',6000);}
+    else if(msg==='abgebrochen'){cur.dl[k]=null;}
+    else cur.dl[k]={state:'err',msg:msg};
+  }
+  renderLoad();
+}
+
+/* ================= Ansichten ================= */
+function go(t){tab=t;Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});render();$('#main').scrollTop=0;}
+document.getElementById('bnav').addEventListener('click',function(e){var b=e.target.closest('button[data-tab]');if(b)go(b.dataset.tab);});
+function render(){if(tab==='load')renderLoad();else renderList();}
+
+function renderLoad(){
+  var inp=$('#url'),val=inp?inp.value:'';
+  var h='<div class="view">';
+  if(!isNative()){
+    h+='<div class="box"><b>Nur in der App</b><p class="hint">Installiere die APK auf deinem Handy, dann kannst du Videos von X speichern.</p></div></div>';
+    $('#main').innerHTML=h;return;
+  }
+  h+='<div class="hero"><h2>Video von X speichern</h2>'+
+    '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen: x.com/…/status/…" value="'+esc(val)+'" aria-label="Link zum Post">'+
+    '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
+    '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button></div>';
+
+  if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
+
+  if(cur){
+    var tw=cur.tw;
+    h+='<div class="box"><div class="tw">'+(tw.avatar?'<img src="'+esc(tw.avatar)+'" alt="">':'')+
+      '<div class="tx"><b>'+esc(tw.name||'Post auf X')+'</b><small>'+(tw.handle?'@'+esc(tw.handle):'')+'</small></div>'+
+      '<button class="ib" data-act="clear" aria-label="Schließen">'+ic('x')+'</button></div>'+
+      (tw.text?'<p class="ttext">'+esc(tw.text.replace(/\s*https:\/\/t\.co\/\w+\s*$/,''))+'</p>':'')+'</div>';
+    if(tw.media.length>1){
+      var open=tw.media.filter(function(m,i){var d=cur.dl[tw.id+'-'+i];return !d||d.state==='err';}).length;
+      if(open>1)h+='<button class="btn grn wide" data-act="all">'+ic('down')+'Alle '+open+' laden</button>';
+    }
+    tw.media.forEach(function(m,i){
+      var k=tw.id+'-'+i,d=cur.dl[k],sel=cur.sel[i]||0;
+      h+='<div class="med"><div class="pv">'+(m.thumb?'<img src="'+esc(m.thumb)+'" alt="" loading="lazy">':'')+
+        (m.kind==='video'?'<span class="pl">'+ic('play')+'</span>':'')+
+        '<span class="tag">'+(m.kind==='image'?'Bild':m.gif?'GIF':'Video')+(m.dur?' · '+tm(m.dur):'')+'</span></div><div class="bd">';
+      if(m.variants.length>1&&!(d&&(d.state==='run'||d.state==='done'))){
+        h+='<div class="chips">'+m.variants.map(function(v,j){
+          return '<button class="chip" data-act="q" data-i="'+i+'" data-j="'+j+'" aria-pressed="'+(j===sel)+'">'+esc(v.label||('Stufe '+(j+1)))+(j===0?' · beste':'')+'</button>';
+        }).join('')+'</div>';
+      }
+      if(d&&d.state==='run'){
+        h+='<div class="sl"><span style="color:var(--fg)">Wird geladen …</span><span id="pp-'+k+'">'+(d.pct>=0?(d.pct||0)+' %':'')+'</span></div>'+
+          '<div class="prog"><i id="pb-'+k+'" style="width:'+(d.pct>0?d.pct:3)+'%"></i></div>'+
+          '<button class="btn sm" data-act="stop" data-k="'+k+'">Abbrechen</button>';
+      }else if(d&&d.state==='done'){
+        h+='<div class="ok">'+ic('check')+'Gespeichert'+(d.size?' · '+mb(d.size):'')+'</div>'+
+          '<div class="row"><button class="btn pri" data-act="play" data-uri="'+esc(d.uri)+'" data-mime="'+esc(d.mime)+'">'+ic(m.kind==='image'?'img':'play')+(m.kind==='image'?'Ansehen':'Abspielen')+'</button>'+
+          '<button class="btn" data-act="share" data-uri="'+esc(d.uri)+'" data-mime="'+esc(d.mime)+'">'+ic('share')+'Teilen</button></div>';
+      }else{
+        if(d&&d.state==='err')h+='<div class="err">Fehler beim Laden: '+esc(d.msg)+'</div>';
+        h+='<button class="btn pri wide" data-act="dl" data-i="'+i+'">'+ic('down')+(m.kind==='image'?'Bild speichern':'Video speichern')+'</button>';
+      }
+      h+='</div></div>';
+    });
+  }else if(!busy){
+    h+='<div class="how"><div><b>1</b>In X auf Teilen tippen</div><div><b>2</b>„Fox Loader“ wählen oder Link kopieren</div><div><b>3</b>Video ist in der Galerie</div></div>'+
+      '<p class="note">Funktioniert mit öffentlichen Posts: Videos, GIFs und Bilder, auch mehrere in einem Post. Kurzlinks (t.co) gehen auch.</p>';
+  }
+  $('#main').innerHTML=h+'</div>';
+}
+
+function renderList(){
+  var h='<div class="view">';
+  if(!hist.length){
+    h+='<div class="empty">'+ic('film')+'<b>Noch nichts geladen</b><span>Deine gespeicherten Videos und Bilder erscheinen hier.</span><button class="btn pri" data-act="tab-load">'+ic('down')+'Erstes Video laden</button></div>';
+  }else{
+    h+='<div class="row" style="justify-content:space-between"><h2>'+hist.length+(hist.length===1?' Download':' Downloads')+'</h2><button class="btn sm" data-act="clearhist">Liste leeren</button></div>';
+    hist.forEach(function(x,i){
+      h+='<div class="hist"><div class="th" style="'+(x.thumb?'background-image:url('+esc(x.thumb)+')':'')+'">'+(x.thumb?'':ic(x.kind==='image'?'img':'film'))+'</div>'+
+        '<div class="tx"><b>'+esc(x.name||'Post auf X')+(x.handle?' · @'+esc(x.handle):'')+'</b>'+
+        '<small>'+(x.kind==='image'?'Bild':'Video')+(x.q&&x.q!=='Original'?' · '+esc(x.q):'')+(x.size?' · '+mb(x.size):'')+' · '+dateDE(x.t)+'</small>'+
+        '<div class="acts"><button class="ib sm" data-act="play" data-uri="'+esc(x.uri)+'" data-mime="'+esc(x.mime)+'" aria-label="Öffnen">'+ic('play')+'</button>'+
+        '<button class="ib sm" data-act="share" data-uri="'+esc(x.uri)+'" data-mime="'+esc(x.mime)+'" aria-label="Teilen">'+ic('share')+'</button>'+
+        '<button class="ib sm" data-act="post" data-i="'+i+'" aria-label="Post auf X öffnen">'+ic('link')+'</button>'+
+        '<button class="ib sm" data-act="del" data-i="'+i+'" aria-label="Löschen">'+ic('trash')+'</button></div></div></div>';
+    });
+  }
+  $('#main').innerHTML=h+'</div>';
+}
+
+/* ================= Einstellungen ================= */
+var appVer=null, upd=null, UPL=false;
+function openSheet(html){var s=$('#sheet');s.innerHTML='<div class="grip"></div>'+html;s.classList.add('open');$('#scrim').classList.add('open');s.scrollTop=0;}
+function closeSheet(){$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
+$('#scrim').addEventListener('click',closeSheet);
+async function loadVer(){var P=plug('Updater');if(!P||appVer)return;try{var i=await P.info();appVer={code:Number(i.versionCode),name:String(i.versionName||'')};}catch(e){}}
+async function settingsSheet(){
+  await loadVer();
+  function q(k,t){return '<button class="chip" data-act="setq" data-k="'+k+'" aria-pressed="'+(set.q===k)+'">'+t+'</button>';}
+  openSheet('<h3>Einstellungen</h3>'+
+    '<div class="srow"><b>Qualität vorauswählen</b><div class="chips">'+q('best','Beste')+q('mid','Bis 720p')+q('small','Kleinste')+'</div><small>Du kannst sie bei jedem Video noch ändern.</small></div>'+
+    '<div class="srow line"><div><b>Beim Teilen sofort laden</b><br><small>Teilen an Fox Loader speichert das Video direkt</small></div><input type="checkbox" class="sw" id="shareDl"'+(set.shareDl?' checked':'')+' aria-label="Beim Teilen sofort laden"></div>'+
+    '<div class="srow line"><div><b>Kopierten Link erkennen</b><br><small>Beim Öffnen schaut Fox Loader in die Zwischenablage</small></div><input type="checkbox" class="sw" id="autoClip"'+(set.autoClip?' checked':'')+' aria-label="Kopierten Link erkennen"></div>'+
+    (isNative()?'<button class="srow" style="border:0;text-align:left" data-act="upd"><b>App-Update</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Tippen zum Prüfen'+(upd?' · Neu: '+upd.ver:'')+'</small></button>'+
+    '<div class="srow line"><div><b>Updates automatisch suchen</b><br><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" id="autoUpd"'+(set.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen"></div>':'')+
+    '<div class="srow"><b>So funktioniert es</b><small>Fox Loader liest die öffentlichen Daten des Posts (wie bei eingebetteten Tweets auf Webseiten) und lädt die MP4-Datei direkt von X auf dein Handy. Kein Konto, keine Werbung, kein fremder Server dazwischen. Klappt das nicht, fragt Fox Loader FxTwitter oder vxTwitter.</small></div>'+
+    '<div class="srow"><b>Nur für dich</b><small>Videos anderer sind für den privaten Gebrauch. Die Rechte bleiben bei den Urhebern, also nicht als eigene wieder hochladen.</small></div>'+
+    '<p class="hint" style="text-align:center">Fox Loader · Design by <b style="color:var(--accent)">Mr.Fox</b></p>');
+  ['shareDl','autoClip','autoUpd'].forEach(function(k){var el=$('#'+k);if(el)el.addEventListener('change',function(e){set[k]=e.target.checked;saveSet();});});
+}
+
+/* ================= App-Update über GitHub ================= */
+async function checkUpdate(manual){
+  var P=plug('Updater');if(!P)return;
+  await loadVer();
+  if(REPO.indexOf('__')===0){if(manual)toast('Diese Version kennt ihr GitHub-Repository nicht.');return;}
+  if(manual)toast('Suche nach Updates …');
+  try{
+    var r=await fetchT('https://api.github.com/repos/'+REPO+'/releases/latest',{headers:{'Accept':'application/vnd.github+json'}},12000);
+    if(!r.ok)throw new Error('GitHub '+r.status);
+    var j=await r.json(),m=String(j.tag_name||'').match(/(\d+)\s*$/),ver=m?parseInt(m[1],10):0;
+    var asset=(j.assets||[]).filter(function(a){return /\.apk$/i.test(a.name);})[0];
+    if(!asset)throw new Error('keine APK im Release');
+    if(appVer&&ver>appVer.code){
+      upd={ver:ver,url:asset.browser_download_url,size:asset.size,done:false,notes:String(j.body||'').split(/\r?\n/).map(function(l){return l.replace(/^[\s*•-]+/,'').trim();}).filter(function(l){return l&&!/^(co-authored-by|claude-session)/i.test(l)&&!/^https?:/.test(l);})};
+      updateSheet();
+    }else if(manual)toast('Du hast die neueste Version ('+(appVer?appVer.code:'?')+').');
+  }catch(e){if(manual)toast('Update-Prüfung fehlgeschlagen: '+errText(e).slice(0,100));}
+}
+function updateSheet(){
+  var s=upd.size?' · '+mb(upd.size):'';
+  openSheet('<h3>Neues Update bereit</h3><div class="srow"><b>Version '+upd.ver+'</b><small>Installiert: '+(appVer?appVer.code:'?')+s+'</small></div>'+
+    '<div class="srow"><b>Was ist neu</b>'+(upd.notes.length?'<ul style="margin:0;padding-left:20px">'+upd.notes.slice(0,12).map(function(l){return '<li>'+esc(l)+'</li>';}).join('')+'</ul>':'<small>Kleine Verbesserungen und Fehlerbehebungen</small>')+'</div>'+
+    '<button class="btn pri wide" data-act="updgo">Jetzt aktualisieren</button><button class="btn wide" data-act="close">Später</button>');
+}
+async function doUpdate(){
+  var P=plug('Updater');if(!P||!upd)return;
+  if(!UPL){UPL=true;
+    try{P.addListener('progress',function(e){var a=$('#updP'),b=$('#updB'),p=(e&&e.percent)||0;if(a)a.textContent='Lade … '+p+' %';if(b)b.style.width=p+'%';});}catch(x){}
+    try{P.addListener('installResult',function(e){var st=e&&e.status,m=String((e&&e.message)||'');if(st===0)return;if(st===3){toast('Installation abgebrochen.');return;}
+      var t=(st===7||st===5||/INCOMPATIBLE|signature|CONFLICT/i.test(m))?'Die Signatur passt nicht zur installierten App. Deinstalliere Fox Loader einmal und installiere die neueste Version von GitHub von Hand.':st===6?'Auf dem Handy ist zu wenig Speicher frei.':'Android hat die Installation abgelehnt.';
+      openSheet('<h3>Installation fehlgeschlagen</h3><div class="srow"><small style="color:var(--fg)">'+esc(t)+'</small><small>Technisch: '+esc(m.slice(0,160)||('Code '+st))+'</small></div><button class="btn wide" data-act="close">OK</button>');});}catch(x){}
+  }
+  try{
+    if(!upd.done){
+      openSheet('<h3>Update wird geladen</h3><div class="srow"><b id="updP">Lade … 0 %</b><div class="prog"><i id="updB" style="width:0"></i></div></div>');
+      await P.download({url:upd.url});upd.done=true;
+    }
+    closeSheet();await P.install();
+  }catch(e){var m=errText(e);closeSheet();
+    if(/permission/i.test(m))toast('Erlaube Fox Loader in den Einstellungen „Apps installieren“ und tippe danach nochmal auf App-Update.',6000);
+    else toast('Update fehlgeschlagen: '+m.slice(0,200),6000);}
+}
+
+/* ================= Eingaben ================= */
+document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.id==='url'){e.preventDefault();e.target.blur();lookup(e.target.value);}});
+document.addEventListener('click',async function(e){
+  var b=e.target.closest('[data-act]');if(!b)return;
+  var a=b.dataset.act, i=b.dataset.i!=null?+b.dataset.i:-1;
+  switch(a){
+    case 'settings':settingsSheet();break;
+    case 'close':closeSheet();break;
+    case 'tab-load':go('load');break;
+    case 'go':{var u=$('#url');if(u)u.blur();lookup(u?u.value:'');break;}
+    case 'paste':{
+      var r={text:''};try{r=await L.clip();}catch(x){}
+      if(!r.text){toast('Die Zwischenablage ist leer.');break;}
+      var u2=$('#url');if(u2)u2.value=r.text.trim();
+      if(hasLink(r.text))lookup(r.text);else toast('In der Zwischenablage ist kein Link von X.');
+      break;}
+    case 'clear':cur=null;lastErr='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
+    case 'q':cur.sel[i]=+b.dataset.j;renderLoad();break;
+    case 'dl':dl(i);break;
+    case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(!d||d.state==='err')dl(j);});break;
+    case 'stop':try{await L.cancel({id:b.dataset.k});}catch(x){}break;
+    case 'play':L.play({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(err){toast('Datei nicht gefunden. Wurde sie in der Galerie gelöscht?');});break;
+    case 'share':L.share({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(err){toast(errText(err));});break;
+    case 'post':L.openUrl({url:hist[i].link}).catch(function(){toast('Link lässt sich nicht öffnen.');});break;
+    case 'del':openSheet('<h3>Download löschen?</h3><div class="srow"><small style="color:var(--fg)">Du kannst ihn nur aus der Liste nehmen oder auch die Datei in der Galerie löschen.</small></div>'+
+      '<button class="btn pri wide" data-act="delfile" data-i="'+i+'">'+ic('trash')+'Auch aus der Galerie löschen</button><button class="btn wide" data-act="dellist" data-i="'+i+'">Nur aus der Liste</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
+    case 'delfile':closeSheet();try{await L.remove({uri:hist[i].uri});}catch(x){toast('Datei ließ sich nicht löschen, sie ist nur aus der Liste raus.');}hist.splice(i,1);saveHist();renderList();break;
+    case 'dellist':closeSheet();hist.splice(i,1);saveHist();renderList();break;
+    case 'clearhist':openSheet('<h3>Liste leeren?</h3><div class="srow"><small style="color:var(--fg)">Die Dateien bleiben in deiner Galerie.</small></div><button class="btn pri wide" data-act="clearyes">Ja, Liste leeren</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
+    case 'clearyes':closeSheet();hist=[];saveHist();renderList();break;
+    case 'setq':set.q=b.dataset.k;saveSet();Array.prototype.forEach.call(b.parentNode.children,function(c){c.setAttribute('aria-pressed',String(c===b));});break;
+    case 'upd':closeSheet();checkUpdate(true);break;
+    case 'updgo':doUpdate();break;
+  }
+});
+
+/* ================= Start ================= */
+function takeShared(t){
+  if(!t)return;
+  if(!hasLink(t)){toast('Im Geteilten ist kein Link zu einem Post auf X.');return;}
+  lastClip=t;save('fl-clip',lastClip);
+  render();var u=$('#url');if(u)u.value=t.trim();
+  lookup(t,true);
+}
+async function checkClip(){
+  if(!L||!set.autoClip||busy)return;
+  try{
+    var r=await L.clip(),t=String(r.text||'').trim();
+    if(!t||t===lastClip||!hasLink(t))return;
+    lastClip=t;save('fl-clip',lastClip);
+    if(cur&&findId(t)===cur.tw.id)return;
+    go('load');var u=$('#url');if(u)u.value=t;
+    toast('Kopierter Link erkannt.');
+    lookup(t);
+  }catch(e){}
+}
+render();
+setTimeout(function(){$('#splash').classList.add('hide');},900);
+if(L){
+  try{L.addListener('shared',function(e){takeShared(e&&e.text);});}catch(x){}
+  L.getShared().then(function(r){if(r&&r.text)takeShared(r.text);else setTimeout(checkClip,700);}).catch(function(){});
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)setTimeout(checkClip,400);});
+}
+if(isNative()&&set.autoUpd){
+  var lastU=0;try{lastU=Number(localStorage.getItem('fl-upd-t')||0);}catch(e){}
+  if(Date.now()-lastU>6*3600e3){try{localStorage.setItem('fl-upd-t',String(Date.now()));}catch(e){}setTimeout(function(){checkUpdate(false);},3000);}
+}
+</script>
+</body>
+</html>

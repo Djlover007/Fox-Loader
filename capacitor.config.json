@@ -1,0 +1,6 @@
+{
+  "appId": "de.foxloader.app",
+  "appName": "Fox Loader",
+  "webDir": "www",
+  "android": { "backgroundColor": "#f7f5f2" }
+}
