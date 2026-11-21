@@ -154,6 +154,12 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .hist .tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist .tx small{color:var(--muted);font-size:13px}
 .hist .acts{display:flex;gap:4px;margin-top:4px}
+.plats{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.plats span{font-size:12px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:999px;padding:4px 10px}
+.tw .pf{width:42px;height:42px;border-radius:50%;background:var(--surface2);flex:none;display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--muted);text-align:center;line-height:1.1;overflow:hidden}
+img.gone{visibility:hidden}
+.med.aud .pv{aspect-ratio:3/1}
+.med.aud .pv img{object-fit:cover;opacity:.55}
 </style>
 </head>
 <body>
@@ -163,6 +169,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <polygon fill="#F57C1F" points="12,10 38,30 62,30 88,10 93,50 50,93 7,50"/><polygon fill="#FFF1DC" points="7,50 38,60 50,93"/><polygon fill="#FFF1DC" points="93,50 62,60 50,93"/><polygon fill="#D65C0C" points="17,19 31,31 18,42"/><polygon fill="#D65C0C" points="83,19 69,31 82,42"/><polygon fill="#2A1608" points="30,47 42,52 31,54"/><polygon fill="#2A1608" points="70,47 58,52 69,54"/><polygon fill="#2A1608" points="43,81 57,81 50,93"/>
       <circle cx="83" cy="83" r="21" fill="#fff"/><circle cx="83" cy="83" r="18" fill="#F57C1F"/><path d="M83 72v16" stroke="#fff" stroke-width="5" stroke-linecap="round"/><polygon fill="#fff" points="74,83 92,83 83,94"/>
     </symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
     <symbol id="i-paste" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></symbol>
@@ -182,7 +189,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 
 <header class="head">
   <div class="logo"><svg viewBox="0 0 112 108" aria-hidden="true"><use href="#fox"/></svg></div>
-  <div class="brand"><b>Fox Loader</b><small>X-Videos <span>speichern</span></small></div>
+  <div class="brand"><b>Fox Loader</b><small>Videos <span>speichern</span></small></div>
   <button class="ib" data-act="settings" aria-label="Einstellungen"><svg class="i"><use href="#i-gear"/></svg></button>
 </header>
 
@@ -208,9 +215,9 @@ function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}c
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var set=Object.assign({q:'best',autoClip:true,shareDl:true,autoUpd:true},load('fl-set',{}));
 var hist=load('fl-hist',[]);
-var tab='load', cur=null, busy=false, lastErr='', lastClip=load('fl-clip','');
+var tab='load', cur=null, busy=false, lastErr='', needLogin='', lastClip=load('fl-clip',''), logins={instagram:false,facebook:false};
 function saveSet(){save('fl-set',set);}
-function saveHist(){save('fl-hist',hist.slice(0,300));}
+function saveHist(){while(hist.length>300)hist.pop();save('fl-hist',hist);}
 
 var tT;function toast(m,ms){var t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tT);tT=setTimeout(function(){t.classList.remove('on');},ms||3800);}
 function isNative(){try{return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());}catch(e){return false;}}
@@ -223,153 +230,470 @@ async function fetchT(url,opt,ms){
   try{return await fetch(url,Object.assign({signal:ctl.signal},opt||{}));}finally{clearTimeout(t);}
 }
 function errText(e){return String((e&&e.message)||e||'Unbekannter Fehler');}
-function tm(s){s=Math.max(0,Math.round(s||0));var m=Math.floor(s/60),x=s%60;return m+':'+(x<10?'0':'')+x;}
+function tm(s){s=Math.max(0,Math.round(s||0));var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+':'+(m<10?'0':''):'')+m+':'+(x<10?'0':'')+x;}
 function mb(b){if(!b)return '';return b<1048576?Math.max(1,Math.round(b/1024))+' KB':(b/1048576).toFixed(1).replace('.',',')+' MB';}
 function dateDE(t){var d=new Date(t);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+', '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}
+function unesc(s){try{return JSON.parse('"'+s+'"');}catch(e){return String(s).replace(/\\\//g,'/').replace(/\\u0025/g,'%').replace(/\\u0026/g,'&');}}
+function htmlDec(s){return String(s||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#039;|&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');}
+function abs(u,base){try{return new URL(htmlDec(u),base).toString();}catch(e){return '';}}
+function pLabel(w,h){w=+w||0;h=+h||0;if(!w||!h)return '';return Math.min(w,h)+'p';}
+function uniq(list,key){var s={};return list.filter(function(x){var k=key(x);if(!k||s[k])return false;s[k]=1;return true;});}
 
+var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',web:'Webseite'};
+var DESK='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var L=plug('Loader');
 if(L){try{L.addListener('progress',function(e){
   if(!cur)return;var k=String(e.id||'');var d=cur.dl[k];if(!d)return;
-  d.pct=e.pct;d.got=e.got;
-  var a=document.getElementById('pp-'+k),b=document.getElementById('pb-'+k);
+  d.pct=e.pct;d.got=e.got;d.phase=e.phase;
+  var a=document.getElementById('pp-'+k),b=document.getElementById('pb-'+k),c=document.getElementById('ph-'+k);
   if(a)a.textContent=(e.pct>=0?e.pct+' % · ':'')+mb(e.got);
   if(b)b.style.width=(e.pct>=0?e.pct:30)+'%';
+  if(c)c.textContent=phaseText(e.phase);
 });}catch(x){}}
+function phaseText(p){return p==='audio'?'Ton wird geladen …':p==='mux'?'Bild und Ton werden zusammengefügt …':'Wird geladen …';}
+
+async function get(url,opt){return await L.get(Object.assign({url:url},opt||{}));}
+async function getJson(url,opt){
+  var r=await get(url,opt);
+  if(r.status!==200)throw new Error('HTTP '+r.status);
+  try{return JSON.parse(r.body);}catch(e){throw new Error('Antwort nicht lesbar');}
+}
 
 /* ================= Link erkennen ================= */
-function findId(t){
+function findXId(t){
   t=String(t||'');
   var m=t.match(/(?:x|twitter|fxtwitter|vxtwitter|fixupx|fixvx|twittpr)\.com\/(?:[^\/\s?#]+\/status(?:es)?|i\/(?:web\/)?status)\/(\d{5,25})/i);
   if(m)return m[1];
   m=t.trim().match(/^(\d{8,25})$/);
   return m?m[1]:null;
 }
-function findShort(t){var m=String(t||'').match(/https?:\/\/t\.co\/[A-Za-z0-9]+/);return m?m[0].replace(/^http:/,'https:'):null;}
-function hasLink(t){return !!(findId(t)||findShort(t));}
+function urlsIn(t){
+  var u=(String(t||'').match(/https?:\/\/[^\s<>"'“”]+/gi)||[]).map(function(x){return x.replace(/[),.!?;:]+$/,'').replace(/^http:/i,'https:');});
+  if(!u.length){var s=String(t||'').trim();if(/^(www\.)?[\w-]+(\.[\w-]+)+\/\S*$/i.test(s))u=['https://'+s];}
+  return u;
+}
+function platOf(u){
+  var h='';try{h=new URL(u).hostname.toLowerCase();}catch(e){return null;}
+  h=h.replace(/^(www|m|mobile|web|vm|vt|music)\./,'');
+  if(h==='t.co')return 'short';
+  if(/(^|\.)(x|twitter|fxtwitter|vxtwitter|fixupx|fixvx)\.com$/.test(h))return 'x';
+  if(/(^|\.)tiktok\.com$/.test(h))return 'tiktok';
+  if(/(^|\.)(instagram\.com|instagr\.am|ddinstagram\.com)$/.test(h))return 'instagram';
+  if(/(^|\.)(facebook\.com|fb\.watch|fb\.com)$/.test(h))return 'facebook';
+  if(/(^|\.)(reddit\.com|redd\.it)$/.test(h))return 'reddit';
+  if(/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(h))return 'youtube';
+  return 'web';
+}
+function detect(t){
+  var id=findXId(t);if(id)return {p:'x',id:id};
+  var us=urlsIn(t);
+  for(var i=0;i<us.length;i++){var p=platOf(us[i]);if(p&&p!=='web'&&p!=='x')return {p:p,url:us[i]};}
+  for(i=0;i<us.length;i++){if(platOf(us[i])==='web')return {p:'web',url:us[i]};}
+  return null;
+}
 
-async function httpJson(url){
-  var r=await L.get({url:url});
-  if(r.status!==200)throw new Error('HTTP '+r.status);
-  try{return JSON.parse(r.body);}catch(e){throw new Error('Antwort nicht lesbar');}
-}
-function qLabel(url,w,h){
-  var m=String(url).match(/\/(\d{2,4})x(\d{2,4})\//);
-  if(m){w=+m[1];h=+m[2];}
-  if(!w||!h)return '';
-  return Math.min(w,h)+'p';
-}
+/* ================= X / Twitter ================= */
+function qLabel(url,w,h){var m=String(url).match(/\/(\d{2,4})x(\d{2,4})\//);if(m){w=+m[1];h=+m[2];}return pLabel(w,h);}
 function origPhoto(u){
   var m=String(u).match(/^(https:\/\/pbs\.twimg\.com\/media\/[^.?]+)\.(jpg|jpeg|png|webp)/i);
   if(m)return m[1]+'?format='+(m[2].toLowerCase()==='png'?'png':'jpg')+'&name=orig';
   return u;
 }
-function variantsOf(list){
+function xVariants(list){
   var v=(list||[]).filter(function(x){return x&&x.url&&/mp4/i.test(x.content_type||x.type||'mp4')&&!/\.m3u8/i.test(x.url);})
     .map(function(x){return {url:x.url,bitrate:x.bitrate||0,label:qLabel(x.url)};});
-  var seen={};v=v.filter(function(x){if(seen[x.url])return false;seen[x.url]=1;return true;});
+  v=uniq(v,function(x){return x.url;});
   v.sort(function(a,b){return (b.bitrate||parseInt(b.label)||0)-(a.bitrate||parseInt(a.label)||0);});
   return v;
 }
-
-// Quelle 1: Twitter-Einbettung (gleiche Daten wie eingebettete Tweets auf Webseiten)
-async function viaSyndication(id){
+function xPhoto(u){return {kind:'image',thumb:u,variants:[{url:origPhoto(u),label:'Original',ext:/png/i.test(u)?'png':'jpg'}]};}
+async function xSyndication(id){
   var token=((Number(id)/1e15)*Math.PI).toString(36).replace(/(0+|\.)/g,'');
-  var j=await httpJson('https://cdn.syndication.twimg.com/tweet-result?id='+id+'&lang=de&token='+token);
+  var j=await getJson('https://cdn.syndication.twimg.com/tweet-result?id='+id+'&lang=de&token='+token);
   if(!j||j.__typename==='TweetTombstone')throw new Error('Tweet gesperrt oder nicht öffentlich');
   function med(t){
     return (t&&t.mediaDetails||[]).map(function(m){
-      if(m.type==='photo')return {kind:'image',thumb:m.media_url_https,variants:[{url:origPhoto(m.media_url_https),label:'Original'}]};
+      if(m.type==='photo')return xPhoto(m.media_url_https);
       var vi=m.video_info||{};
-      return {kind:'video',gif:m.type==='animated_gif',thumb:m.media_url_https,dur:(vi.duration_millis||0)/1000,variants:variantsOf(vi.variants)};
+      return {kind:'video',gif:m.type==='animated_gif',thumb:m.media_url_https,dur:(vi.duration_millis||0)/1000,variants:xVariants(vi.variants)};
     });
   }
-  var media=med(j);
-  if(!media.length&&j.quoted_tweet)media=med(j.quoted_tweet);
-  return {id:id,text:j.text||'',name:(j.user&&j.user.name)||'',handle:(j.user&&j.user.screen_name)||'',avatar:(j.user&&j.user.profile_image_url_https)||'',media:media};
+  var media=med(j);if(!media.length&&j.quoted_tweet)media=med(j.quoted_tweet);
+  var u=j.user||{};
+  return {text:j.text||'',name:u.name||'',handle:u.screen_name||'',avatar:u.profile_image_url_https||'',media:media};
 }
-// Quelle 2: FxTwitter
-async function viaFx(id){
-  var j=await httpJson('https://api.fxtwitter.com/status/'+id);
+async function xFx(id){
+  var j=await getJson('https://api.fxtwitter.com/status/'+id);
   var t=j&&j.tweet;if(!t)throw new Error((j&&j.message)||'nicht gefunden');
   function med(t){
     return ((t&&t.media&&t.media.all)||[]).map(function(m){
-      if(m.type==='photo')return {kind:'image',thumb:m.url,variants:[{url:origPhoto(m.url),label:'Original'}]};
-      var v=variantsOf(m.variants);
-      if(!v.length&&m.url)v=[{url:m.url,bitrate:0,label:qLabel(m.url,m.width,m.height)}];
+      if(m.type==='photo')return xPhoto(m.url);
+      var v=xVariants(m.variants);
+      if(!v.length&&m.url)v=[{url:m.url,label:qLabel(m.url,m.width,m.height)}];
       return {kind:'video',gif:m.type==='gif',thumb:m.thumbnail_url||'',dur:m.duration||0,variants:v};
     });
   }
   var media=med(t);if(!media.length&&t.quote)media=med(t.quote);
-  return {id:id,text:t.text||'',name:(t.author&&t.author.name)||'',handle:(t.author&&t.author.screen_name)||'',avatar:(t.author&&t.author.avatar_url)||'',media:media};
+  var a=t.author||{};
+  return {text:t.text||'',name:a.name||'',handle:a.screen_name||'',avatar:a.avatar_url||'',media:media};
 }
-// Quelle 3: vxTwitter
-async function viaVx(id){
-  var j=await httpJson('https://api.vxtwitter.com/Twitter/status/'+id);
+async function xVx(id){
+  var j=await getJson('https://api.vxtwitter.com/Twitter/status/'+id);
   var media=(j.media_extended||[]).map(function(m){
-    if(m.type==='image')return {kind:'image',thumb:m.url,variants:[{url:origPhoto(m.url),label:'Original'}]};
+    if(m.type==='image')return xPhoto(m.url);
     var s=m.size||{};
-    return {kind:'video',gif:m.type==='gif',thumb:m.thumbnail_url||'',dur:(m.duration_millis||0)/1000,variants:[{url:m.url,bitrate:0,label:qLabel(m.url,s.width,s.height)}]};
+    return {kind:'video',gif:m.type==='gif',thumb:m.thumbnail_url||'',dur:(m.duration_millis||0)/1000,variants:[{url:m.url,label:qLabel(m.url,s.width,s.height)}]};
   });
-  return {id:id,text:j.text||'',name:j.user_name||'',handle:j.user_screen_name||'',avatar:j.user_profile_image_url||'',media:media};
+  return {text:j.text||'',name:j.user_name||'',handle:j.user_screen_name||'',avatar:j.user_profile_image_url||'',media:media};
 }
-async function fetchTweet(id){
-  var errs=[],best=null;
-  var src=[viaSyndication,viaFx,viaVx];
+async function getX(id){
+  var r=await firstWithMedia([xSyndication,xFx,xVx],id,'Post nicht erreichbar. Er ist privat, gelöscht oder nur mit Anmeldung sichtbar.');
+  r.id=id;r.link='https://x.com/'+(r.handle||'i')+'/status/'+id;
+  r.media.forEach(function(m){if(m.text==null)m.text='';});
+  return r;
+}
+async function firstWithMedia(src,arg,msg){
+  var best=null,errs=[];
   for(var i=0;i<src.length;i++){
-    try{
-      var r=await src[i](id);
-      r.media=r.media.filter(function(m){return m.variants&&m.variants.length;});
-      if(r.media.length)return r;
-      if(!best)best=r;
-    }catch(e){errs.push(errText(e));}
+    try{var r=await src[i](arg);r.media=(r.media||[]).filter(function(m){return m.variants&&m.variants.length;});if(r.media.length)return r;if(!best)best=r;}
+    catch(e){errs.push(errText(e));}
   }
   if(best)return best;
-  throw new Error(errs.length&&errs.every(function(x){return /404/.test(x);})?'Diesen Post gibt es nicht (mehr).':'Post nicht erreichbar. Er ist privat, gelöscht oder nur mit Anmeldung sichtbar.');
+  var e=errs.filter(function(x){return /^LOGIN:/.test(x);})[0];
+  throw new Error(e||msg+(errs.length?' ('+errs[errs.length-1].slice(0,80)+')':''));
+}
+
+/* ================= TikTok ================= */
+async function ttPage(url){
+  var r=await get(url,{headers:{'Accept':'text/html,application/xhtml+xml'}});
+  var fin=r.url,id=(fin.match(/\/(?:video|photo|v)\/(\d{8,25})/)||[])[1];
+  var m=r.body.match(/<script[^>]+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if(!m)throw new Error('TikTok-Seite nicht lesbar');
+  var j=JSON.parse(m[1]),sc=(j.__DEFAULT_SCOPE__||{})['webapp.video-detail'];
+  var it=sc&&sc.itemInfo&&sc.itemInfo.itemStruct;
+  if(!it)throw new Error(sc&&sc.statusMsg||'Video nicht gefunden');
+  var hdr={'Referer':'https://www.tiktok.com/'};if(r.cookies)hdr.Cookie=r.cookies;
+  var a=it.author||{},media=[],v=it.video||{};
+  if(it.imagePost&&it.imagePost.images){
+    it.imagePost.images.forEach(function(im){
+      var l=(im.imageURL&&im.imageURL.urlList)||[];
+      var u=l.filter(function(x){return /jpe?g/i.test(x);})[0]||l[0];
+      if(u)media.push({kind:'image',thumb:u,headers:hdr,variants:[{url:u,label:'Original',ext:/\.webp/i.test(u)&&!/jpe?g/i.test(u)?'webp':'jpg'}]});
+    });
+  }else{
+    var vs=(v.bitrateInfo||[]).map(function(b){
+      var p=b.PlayAddr||{},u=(p.UrlList||[])[0];
+      var hevc=/265|hev|bytevc1/i.test((b.CodecType||'')+(b.GearName||''));
+      return {url:u,label:pLabel(p.Width,p.Height)+(hevc?' HEVC':''),bitrate:b.Bitrate||0,size:+p.DataSize||0,hevc:hevc,h:Math.min(+p.Width||0,+p.Height||0)};
+    }).filter(function(x){return x.url;});
+    vs=uniq(vs,function(x){return x.label;});
+    vs.sort(function(x,y){return (y.h-x.h)||((x.hevc?1:0)-(y.hevc?1:0))||(y.bitrate-x.bitrate);});
+    if(!vs.length&&v.playAddr)vs=[{url:v.playAddr,label:pLabel(v.width,v.height)||'Standard'}];
+    if(vs.length)media.push({kind:'video',thumb:v.cover||v.originCover||'',dur:v.duration||0,headers:hdr,variants:vs});
+  }
+  var mu=it.music||{};
+  if(mu.playUrl)media.push({kind:'audio',thumb:mu.coverLarge||mu.coverMedium||v.cover||'',dur:mu.duration||0,headers:hdr,variants:[{url:mu.playUrl,label:'Ton (MP3)',ext:'mp3'}],title:mu.title||''});
+  return {id:it.id||id,text:it.desc||'',name:a.nickname||'',handle:a.uniqueId||'',avatar:a.avatarThumb||'',media:media,link:'https://www.tiktok.com/@'+(a.uniqueId||'')+'/video/'+(it.id||id)};
+}
+async function ttWm(url){
+  var j=await getJson('https://www.tikwm.com/api/?hd=1&url='+encodeURIComponent(url));
+  if(!j||j.code!==0||!j.data)throw new Error((j&&j.msg)||'TikWM kennt das Video nicht');
+  var d=j.data,a=d.author||{},media=[];
+  function fx(u){return !u?'':/^https?:/.test(u)?u:'https://www.tikwm.com'+u;}
+  if(d.images&&d.images.length){
+    d.images.forEach(function(u){media.push({kind:'image',thumb:fx(u),variants:[{url:fx(u),label:'Original',ext:'jpg'}]});});
+  }else{
+    var vs=[];
+    if(d.hdplay)vs.push({url:fx(d.hdplay),label:'HD',size:d.hd_size||0});
+    if(d.play)vs.push({url:fx(d.play),label:'Standard',size:d.size||0});
+    vs=uniq(vs,function(x){return x.url;});
+    if(vs.length)media.push({kind:'video',thumb:fx(d.cover||d.origin_cover),dur:d.duration||0,variants:vs});
+  }
+  if(d.music)media.push({kind:'audio',thumb:fx(d.music_info&&d.music_info.cover||d.cover),variants:[{url:fx(d.music),label:'Ton (MP3)',ext:'mp3'}]});
+  return {id:d.id||'',text:d.title||'',name:a.nickname||'',handle:a.unique_id||'',avatar:fx(a.avatar),media:media,link:'https://www.tiktok.com/@'+(a.unique_id||'')+'/video/'+(d.id||'')};
+}
+async function getTikTok(url){
+  return await firstWithMedia([ttPage,ttWm],url,'TikTok-Video nicht erreichbar. Ist es privat oder gelöscht?');
+}
+
+/* ================= Instagram ================= */
+var IGH={'X-IG-App-ID':'936619743392459','X-ASBD-ID':'129477','X-Requested-With':'XMLHttpRequest','Referer':'https://www.instagram.com/','Accept':'*/*'};
+var IGA='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+function igPk(code){var n=BigInt(0);code=code.slice(0,11);for(var i=0;i<code.length;i++){var k=IGA.indexOf(code[i]);if(k<0)return null;n=n*BigInt(64)+BigInt(k);}return n.toString();}
+function igV1(it){
+  var u=it.user||{},list=it.carousel_media&&it.carousel_media.length?it.carousel_media:[it];
+  var media=list.map(function(m){
+    var imgs=((m.image_versions2||{}).candidates||[]).slice().sort(function(a,b){return b.width*b.height-a.width*a.height;});
+    var thumb=imgs.length?imgs[imgs.length>2?1:0].url:'';
+    if(m.video_versions&&m.video_versions.length){
+      var vs=m.video_versions.slice().sort(function(a,b){return (b.width*b.height)-(a.width*a.height);})
+        .map(function(v){return {url:v.url,label:pLabel(v.width,v.height)||'Video'};});
+      return {kind:'video',thumb:thumb,dur:m.video_duration||0,variants:uniq(uniq(vs,function(x){return x.url;}),function(x){return x.label;})};
+    }
+    return imgs.length?{kind:'image',thumb:thumb,variants:[{url:imgs[0].url,label:pLabel(imgs[0].width,imgs[0].height)||'Original',ext:'jpg'}]}:null;
+  }).filter(Boolean);
+  return {id:it.code||it.pk||'',text:(it.caption&&it.caption.text)||'',name:u.full_name||u.username||'',handle:u.username||'',avatar:u.profile_pic_url||'',media:media,link:it.code?'https://www.instagram.com/p/'+it.code+'/':''};
+}
+function igGql(m){
+  var nodes=m.edge_sidecar_to_children?m.edge_sidecar_to_children.edges.map(function(e){return e.node;}):[m];
+  var media=nodes.map(function(n){
+    var d=n.dimensions||{},thumb=n.display_url;
+    var res=(n.display_resources||[]).slice(-1)[0];
+    if(n.is_video&&n.video_url)return {kind:'video',thumb:thumb,dur:n.video_duration||0,variants:[{url:n.video_url,label:pLabel(d.width,d.height)||'Video'}]};
+    return {kind:'image',thumb:thumb,variants:[{url:(res&&res.src)||n.display_url,label:'Original',ext:'jpg'}]};
+  });
+  var o=m.owner||{},cap=(((m.edge_media_to_caption||{}).edges||[])[0]||{}).node;
+  return {id:m.shortcode||'',text:(cap&&cap.text)||'',name:o.full_name||o.username||'',handle:o.username||'',avatar:o.profile_pic_url||'',media:media,link:'https://www.instagram.com/p/'+m.shortcode+'/'};
+}
+async function getInstagram(url){
+  if(/instagram\.com\/share\//i.test(url)){var rr=await get(url,{cookies:true});url=rr.url;}
+  var st=url.match(/instagram\.com\/stories\/([^\/?#]+)\/(\d+)/i);
+  var cm=url.match(/instagram\.com\/(?:[^\/?#]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]{5,})/i);
+  if(!st&&!cm){
+    if(/instagram\.com\/stories\//i.test(url))throw new Error('Öffne die einzelne Story und teile genau die, dann klappt es.');
+    throw new Error('Das ist kein Link zu einem Instagram-Beitrag, Reel oder einer Story.');
+  }
+  var pk=st?st[2]:igPk(cm[1]),code=cm?cm[1]:'';
+  var src=[];
+  async function v1(){
+    if(!logins.instagram)throw new Error('LOGIN:instagram');
+    var j=await getJson('https://www.instagram.com/api/v1/media/'+pk+'/info/',{headers:IGH,cookies:true});
+    var it=j.items&&j.items[0];if(!it)throw new Error('nicht gefunden');
+    return igV1(it);
+  }
+  async function gql(){
+    if(!code)throw new Error('LOGIN:instagram');
+    var vars=JSON.stringify({shortcode:code,fetch_tagged_user_count:null,hoisted_comment_id:null,hoisted_reply_id:null});
+    var h=Object.assign({},IGH,{'Content-Type':'application/x-www-form-urlencoded','X-FB-LSD':'AVqbxe3J_YA','Origin':'https://www.instagram.com','Sec-Fetch-Site':'same-origin'});
+    var j=await getJson('https://www.instagram.com/graphql/query',{method:'POST',headers:h,cookies:true,
+      body:'av=0&__d=www&__user=0&__a=1&__req=3&lsd=AVqbxe3J_YA&variables='+encodeURIComponent(vars)+'&doc_id=8845758582119845'});
+    var m=j&&j.data&&j.data.xdt_shortcode_media;
+    if(!m)throw new Error(logins.instagram?'Beitrag nicht sichtbar (privat oder gelöscht)':'LOGIN:instagram');
+    return igGql(m);
+  }
+  src=logins.instagram?[v1,gql]:[gql,v1];
+  var r=await firstWithMedia(src,null,'Instagram-Beitrag nicht erreichbar.');
+  if(!r.link)r.link=url;
+  return r;
+}
+
+/* ================= Facebook ================= */
+async function getFacebook(url){
+  var r=await get(url,{cookies:true,headers:{'User-Agent':DESK,'Accept':'text/html,application/xhtml+xml','Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'}});
+  var b=r.body||'';
+  function grab(k){var m=b.match(new RegExp('"'+k+'":"([^"]+)"'));return m?unesc(m[1]):'';}
+  function meta(p){var m=b.match(new RegExp('<meta[^>]+(?:property|name)="'+p+'"[^>]+content="([^"]*)"','i'))||b.match(new RegExp('<meta[^>]+content="([^"]*)"[^>]+(?:property|name)="'+p+'"','i'));return m?htmlDec(m[1]):'';}
+  var hd=grab('browser_native_hd_url')||grab('playable_url_quality_hd')||grab('hd_src');
+  var sd=grab('browser_native_sd_url')||grab('playable_url')||grab('sd_src')||meta('og:video:secure_url')||meta('og:video');
+  var thumb=meta('og:image')||(b.match(/"preferred_thumbnail":\{"image":\{"uri":"([^"]+)"/)||[])[1];
+  if(thumb)thumb=unesc(thumb);
+  var title=meta('og:title')||meta('og:description');
+  var vs=[];if(hd)vs.push({url:hd,label:'HD'});if(sd&&sd!==hd)vs.push({url:sd,label:'SD'});
+  var media=[];
+  if(vs.length)media.push({kind:'video',thumb:thumb||'',variants:vs});
+  else if(thumb&&/\/photo|fbid=/.test(r.url))media.push({kind:'image',thumb:thumb,variants:[{url:thumb,label:'Original',ext:'jpg'}]});
+  if(!media.length){
+    if(!logins.facebook||/login/.test(r.url))throw new Error('LOGIN:facebook');
+    throw new Error('Kein Video gefunden. Ist der Beitrag privat?');
+  }
+  var owner=unesc((b.match(/"owner":\{"__typename":"[^"]+","name":"([^"]+)"/)||b.match(/"actors":\[\{"__typename":"User","name":"([^"]+)"/)||[])[1]||'');
+  return {id:(r.url.match(/(\d{8,})/)||[])[1]||String(Date.now()),text:title.replace(/\s*\|\s*Facebook$/,''),name:owner||'Facebook',handle:'',avatar:'',media:media,link:r.url};
+}
+
+/* ================= Reddit ================= */
+async function getReddit(url){
+  var r=await get(url,{method:'HEAD'});var fin=r.url;
+  var m=fin.match(/comments\/([a-z0-9]{4,10})/i);
+  if(!m){r=await get(url);fin=r.url;m=fin.match(/comments\/([a-z0-9]{4,10})/i);}
+  if(!m)throw new Error('Das ist kein Link zu einem Reddit-Beitrag.');
+  var j=null,err='';
+  var hosts=['https://www.reddit.com','https://old.reddit.com'];
+  for(var i=0;i<hosts.length&&!j;i++){try{j=await getJson(hosts[i]+'/comments/'+m[1]+'.json?raw_json=1',{headers:{'Accept':'application/json'}});}catch(e){err=errText(e);}}
+  if(!j)throw new Error('Reddit antwortet nicht ('+err+').');
+  var d=j[0].data.children[0].data;
+  var s=d;
+  if(!(s.secure_media||s.media||s.media_metadata||s.preview)&&s.crosspost_parent_list&&s.crosspost_parent_list[0])s=s.crosspost_parent_list[0];
+  var media=[],thumb='';
+  try{thumb=s.preview.images[0].source.url;}catch(e){thumb=/^https/.test(s.thumbnail||'')?s.thumbnail:'';}
+  var rv=((s.secure_media||s.media||{}).reddit_video)||(s.preview&&s.preview.reddit_video_preview);
+  if(rv&&rv.fallback_url){
+    var base=rv.fallback_url.split('?')[0].replace(/[^\/]+$/,''),vids=[],auds=[];
+    if(rv.dash_url){
+      try{
+        var mpd=(await get(rv.dash_url)).body;
+        var re=/<Representation\b([^>]*)>([\s\S]*?)<\/Representation>/g,x;
+        while((x=re.exec(mpd))){
+          var at=x[1],bu=(x[2].match(/<BaseURL>([^<]+)<\/BaseURL>/)||[])[1];if(!bu)continue;
+          var bw=+((at.match(/bandwidth="(\d+)"/)||[])[1]||0),h=+((at.match(/height="(\d+)"/)||[])[1]||0),w=+((at.match(/width="(\d+)"/)||[])[1]||0);
+          if(/audio/i.test(bu)||/audio/i.test(at))auds.push({url:abs(bu,base),bw:bw});else vids.push({url:abs(bu,base),bw:bw,label:pLabel(w,h)||h+'p'});
+        }
+      }catch(e){}
+    }
+    if(!vids.length)vids=[{url:rv.fallback_url,bw:rv.bitrate_kbps||0,label:pLabel(rv.width,rv.height)||(rv.height+'p')}];
+    if(!auds.length&&rv.has_audio!==false&&!rv.is_gif){
+      var cands=['DASH_AUDIO_128.mp4','DASH_AUDIO_64.mp4','DASH_audio.mp4','audio'];
+      for(var k=0;k<cands.length;k++){try{var hr=await get(base+cands[k],{method:'HEAD'});if(hr.status===200){auds.push({url:base+cands[k],bw:0});break;}}catch(e){}}
+    }
+    vids.sort(function(a,b){return (parseInt(b.label)||0)-(parseInt(a.label)||0)||b.bw-a.bw;});
+    vids=uniq(vids,function(v){return v.label;});
+    auds.sort(function(a,b){return b.bw-a.bw;});
+    var au=auds[0]&&auds[0].url;
+    media.push({kind:'video',gif:!!rv.is_gif,thumb:thumb,dur:rv.duration||0,variants:vids.map(function(v){return {url:v.url,audio:au,label:v.label};})});
+  }else if(s.gallery_data&&s.media_metadata){
+    s.gallery_data.items.forEach(function(g){
+      var mm=s.media_metadata[g.media_id];if(!mm||mm.status!=='valid'||!mm.s)return;
+      var p=mm.p&&mm.p.length?mm.p[mm.p.length-1].u:'';
+      if(mm.s.mp4)media.push({kind:'video',gif:true,thumb:p||mm.s.u||'',variants:[{url:mm.s.mp4,label:pLabel(mm.s.x,mm.s.y)||'Video'}]});
+      else{var u=mm.s.u||mm.s.gif;var ext=(mm.m||'').split('/')[1]||'jpg';media.push({kind:'image',thumb:p||u,variants:[{url:u,label:pLabel(mm.s.x,mm.s.y)||'Original',ext:ext==='jpeg'?'jpg':ext}]});}
+    });
+  }else{
+    var u2=s.url_overridden_by_dest||s.url||'';
+    var me=u2.match(/\.(jpe?g|png|gif|webp)(\?|$)/i);
+    if(me){
+      var gifMp4=null;try{gifMp4=s.preview.images[0].variants.mp4.source.url;}catch(e){}
+      if(me[1].toLowerCase()==='gif'&&gifMp4)media.push({kind:'video',gif:true,thumb:thumb||u2,variants:[{url:gifMp4,label:'Video'},{url:u2,label:'GIF',ext:'gif',kind:'image'}]});
+      else media.push({kind:'image',thumb:thumb||u2,variants:[{url:u2,label:'Original',ext:me[1].toLowerCase().replace('jpeg','jpg')}]});
+    }else if(s.secure_media&&s.secure_media.oembed&&/youtube|youtu\.be/.test(u2)){
+      return await getYouTube(u2);
+    }
+  }
+  return {id:d.id,text:d.title||'',name:'r/'+(d.subreddit||''),handle:'u/'+(d.author||''),avatar:'',media:media,link:'https://www.reddit.com'+(d.permalink||'')};
+}
+
+/* ================= YouTube ================= */
+var YTC=[
+  {name:'ANDROID_VR',id:28,ver:'1.60.19',ua:'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',extra:{deviceMake:'Oculus',deviceModel:'Quest 3',androidSdkVersion:32,osName:'Android',osVersion:'12L'}},
+  {name:'IOS',id:5,ver:'20.10.4',ua:'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',extra:{deviceMake:'Apple',deviceModel:'iPhone16,2',osName:'iPhone',osVersion:'18.3.2.22D82'}}
+];
+function ytId(u){var m=String(u).match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([\w-]{11})/);return m?m[1]:null;}
+async function getYouTube(url){
+  var id=ytId(url);if(!id)throw new Error('Das ist kein Link zu einem YouTube-Video.');
+  var lastWhy='';
+  for(var i=0;i<YTC.length;i++){
+    var c=YTC[i];
+    try{
+      var body=JSON.stringify({context:{client:Object.assign({clientName:c.name,clientVersion:c.ver,hl:'de',gl:'DE'},c.extra)},videoId:id,contentCheckOk:true,racyCheckOk:true});
+      var j=await getJson('https://www.youtube.com/youtubei/v1/player?prettyPrint=false',{method:'POST',body:body,
+        headers:{'Content-Type':'application/json','User-Agent':c.ua,'X-YouTube-Client-Name':String(c.id),'X-YouTube-Client-Version':c.ver,'Origin':'https://www.youtube.com'}});
+      var ps=j.playabilityStatus||{};
+      if(ps.status!=='OK'){lastWhy=ps.reason||ps.status||'';continue;}
+      var sd=j.streamingData||{},ad=(sd.adaptiveFormats||[]).filter(function(f){return f.url;});
+      var hdr={'User-Agent':c.ua};
+      var vids=ad.filter(function(f){return /^video\/mp4/.test(f.mimeType)&&/avc1/.test(f.mimeType);});
+      vids.sort(function(a,b){return (b.height||0)-(a.height||0)||(b.fps||0)-(a.fps||0)||(b.bitrate||0)-(a.bitrate||0);});
+      vids=uniq(vids,function(f){return f.qualityLabel||f.height;});
+      var auds=ad.filter(function(f){return /^audio\/mp4/.test(f.mimeType);}).sort(function(a,b){return (b.bitrate||0)-(a.bitrate||0);});
+      var au=auds[0];
+      var vs=au?vids.map(function(f){return {url:f.url,audio:au.url,label:(f.qualityLabel||f.height+'p').replace(/p(\d+)$/,'p$1'),size:(+f.contentLength||0)+(+au.contentLength||0),chunked:true};}):[];
+      (sd.formats||[]).filter(function(f){return f.url&&/^video\/mp4/.test(f.mimeType);}).forEach(function(f){
+        var l=f.qualityLabel||f.height+'p';
+        if(!vs.some(function(v){return v.label===l;}))vs.push({url:f.url,label:l,size:+f.contentLength||0,chunked:true});
+      });
+      if(!vs.length){lastWhy='keine ladbaren Formate';continue;}
+      vs.sort(function(a,b){return (parseInt(b.label)||0)-(parseInt(a.label)||0);});
+      var vd=j.videoDetails||{},th='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';
+      var media=[{kind:'video',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:vs}];
+      if(au)media.push({kind:'audio',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:[{url:au.url,label:'Ton (M4A)',ext:'m4a',size:+au.contentLength||0,chunked:true}]});
+      return {id:id,text:vd.title||'',name:vd.author||'YouTube',handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id};
+    }catch(e){lastWhy=errText(e);}
+  }
+  throw new Error('YouTube gibt das Video gerade nicht heraus'+(lastWhy?' ('+lastWhy.slice(0,120)+')':'')+'. YouTube ändert das oft, ein App-Update hilft meistens.');
+}
+
+/* ================= Andere Seiten ================= */
+async function getWeb(url){
+  var direct=url.match(/\.(mp4|m4v|mov|jpe?g|png|gif|webp|mp3|m4a)(\?|#|$)/i);
+  function one(u,ext){
+    ext=ext.toLowerCase().replace('jpeg','jpg').replace('m4v','mp4').replace('mov','mp4');
+    var kind=/jpg|png|gif|webp/.test(ext)?'image':/mp3|m4a/.test(ext)?'audio':'video';
+    return {kind:kind,thumb:kind==='image'?u:'',variants:[{url:u,label:'Original',ext:ext}]};
+  }
+  var host='';try{host=new URL(url).hostname.replace(/^www\./,'');}catch(e){}
+  if(direct)return {id:String(Date.now()),text:decodeURIComponent(url.split('/').pop().split('?')[0]),name:host,handle:'',avatar:'',media:[one(url,direct[1])],link:url};
+  var r=await get(url,{headers:{'Accept':'text/html,application/xhtml+xml'}});
+  var t=(r.type||'').toLowerCase();
+  if(/^video\/|^image\/|^audio\//.test(t)){var ex=t.split('/')[1].split(';')[0].replace('mpeg','mp3').replace('quicktime','mp4');return {id:String(Date.now()),text:'',name:host,handle:'',avatar:'',media:[one(r.url,ex)],link:url};}
+  var b=r.body||'';
+  function meta(p){var m=b.match(new RegExp('<meta[^>]+(?:property|name)=["\']'+p+'["\'][^>]+content=["\']([^"\']*)["\']','i'))||b.match(new RegExp('<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']'+p+'["\']','i'));return m?htmlDec(m[1]):'';}
+  var found=[];
+  ['og:video:secure_url','og:video:url','og:video','twitter:player:stream'].forEach(function(p){var v=meta(p);if(v)found.push(abs(v,r.url));});
+  var re=/<(?:video|source)\b[^>]*\bsrc=["']([^"']+)["']/gi,x;
+  while((x=re.exec(b)))found.push(abs(x[1],r.url));
+  var re2=/"(?:contentUrl|videoUrl|video_url|file|src|url)"\s*:\s*"(https?:[^"]+?\.mp4[^"]*)"/gi;
+  while((x=re2.exec(b)))found.push(unesc(x[1]));
+  var re3=/https?:\/\/[^"'\s<>\\]+?\.mp4(?:\?[^"'\s<>\\]*)?/gi;
+  while((x=re3.exec(b))&&found.length<30)found.push(htmlDec(x[0]));
+  found=uniq(found.filter(function(u){return /^https:/.test(u)&&!/\.m3u8|\.mpd|blob:/i.test(u)&&!/youtube\.com\/embed/.test(u);}),function(u){return u;});
+  var title=meta('og:title')||((b.match(/<title[^>]*>([^<]*)<\/title>/i)||[])[1]||'');
+  var img=meta('og:image');img=img?abs(img,r.url):'';
+  var media=found.slice(0,8).map(function(u){return {kind:'video',thumb:img,variants:[{url:u,label:(u.match(/(\d{3,4})p/)||[])[0]||'Video'}]};});
+  if(!media.length&&img)media.push({kind:'image',thumb:img,variants:[{url:img,label:'Vorschaubild',ext:/\.png/i.test(img)?'png':'jpg'}]});
+  if(!media.length)throw new Error('Auf dieser Seite habe ich kein Video gefunden. Manche Seiten laden Videos nur gestückelt (Streaming), das geht nicht.');
+  return {id:String(Date.now()),text:htmlDec(title).trim(),name:meta('og:site_name')||host,handle:'',avatar:'',media:media,link:url};
 }
 
 /* ================= Laden ================= */
 async function lookup(text,fromShare){
   if(busy)return;
   text=String(text||'').trim();
-  if(!text){toast('Füge zuerst einen Link von X ein.');return;}
-  var id=findId(text);
-  busy=true;lastErr='';cur=null;go('load');
+  if(!text){toast('Füge zuerst einen Link ein.');return;}
+  busy=true;lastErr='';needLogin='';cur=null;go('load');
   try{
-    if(!id){
-      var s=findShort(text);
-      if(!s)throw new Error('Das ist kein Link zu einem Post auf X. Er sieht so aus: x.com/name/status/123…');
-      var r=await L.get({url:s});
-      id=findId(r.url)||findId(r.body);
-      if(!id)throw new Error('Der Kurzlink führt nicht zu einem Post.');
+    var d=detect(text);
+    if(!d)throw new Error('Das ist kein Link. Kopiere in der App „Link kopieren“ und füge ihn hier ein.');
+    if(d.p==='short'){var rr=await get(d.url,{method:'HEAD'});d=detect(rr.url);if(!d)throw new Error('Der Kurzlink führt nirgendwo hin.');}
+    if(d.p==='x'&&!d.id){var xi=findXId(d.url);if(!xi)throw new Error('Das ist kein Link zu einem Post auf X. Er sieht so aus: x.com/name/status/123…');d.id=xi;}
+    var tw;
+    switch(d.p){
+      case 'x':tw=await getX(d.id);break;
+      case 'tiktok':tw=await getTikTok(d.url);break;
+      case 'instagram':tw=await getInstagram(d.url);break;
+      case 'facebook':tw=await getFacebook(d.url);break;
+      case 'reddit':tw=await getReddit(d.url);break;
+      case 'youtube':tw=await getYouTube(d.url);break;
+      default:tw=await getWeb(d.url);
     }
-    var tw=await fetchTweet(id);
+    tw.p=tw.p||(d.p==='reddit'&&tw.link&&/youtube/.test(tw.link)?'youtube':d.p);
+    tw.id=String(tw.id||Date.now());
     cur={tw:tw,sel:{},dl:{}};
     tw.media.forEach(function(m,i){cur.sel[i]=pickQ(m.variants);});
-    if(!tw.media.length)lastErr='In diesem Post ist kein Video und kein Bild.';
-  }catch(e){lastErr=errText(e);}
+    if(!tw.media.length)lastErr='In diesem Beitrag ist kein Video und kein Bild.';
+  }catch(e){
+    var m=errText(e);
+    if(/^LOGIN:/.test(m)){needLogin=m.slice(6);lastErr='';}
+    else lastErr=m;
+  }
   busy=false;render();
   if(cur&&cur.tw.media.length&&fromShare&&set.shareDl){
-    cur.tw.media.forEach(function(m,i){dl(i);});
+    cur.tw.media.forEach(function(m,i){if(m.kind!=='audio')dl(i);});
   }
 }
 function pickQ(v){
   if(set.q==='best'||v.length<2)return 0;
   if(set.q==='small')return v.length-1;
-  for(var i=0;i<v.length;i++){if(parseInt(v[i].label)&&parseInt(v[i].label)<=720)return i;}
+  for(var i=0;i<v.length;i++){var p=parseInt(v[i].label);if(p&&p<=720)return i;}
   return Math.floor(v.length/2);
 }
+function folderOf(kind){return kind==='image'?'Pictures/Fox Loader':kind==='audio'?'Music/Fox Loader':'Movies/Fox Loader';}
 async function dl(i){
   if(!cur||!L)return;
-  var m=cur.tw.media[i],k=cur.tw.id+'-'+i,v=m.variants[cur.sel[i]||0];
+  var tw=cur.tw,m=tw.media[i],k=tw.id+'-'+i,v=m.variants[cur.sel[i]||0];
   var d=cur.dl[k];if(d&&d.state==='run')return;
+  var kind=v.kind||m.kind;
   cur.dl[k]={state:'run',pct:0};renderLoad();
-  var name=(cur.tw.handle?cur.tw.handle+'_':'X_')+cur.tw.id+(cur.tw.media.length>1?'_'+(i+1):'')+(v.label&&v.label!=='Original'?'_'+v.label:'');
+  var who=(tw.handle||tw.name||'').replace(/^[ur]\//,'').replace(/[^\w.-]+/g,'_').slice(0,30);
+  var name=PLAT[tw.p]+'_'+(who?who+'_':'')+String(tw.id).slice(-19)+(tw.media.filter(function(x){return x.kind!=='audio';}).length>1&&m.kind!=='audio'?'_'+(i+1):'')+(v.label&&!/^(Original|Video|Standard|Ton)/.test(v.label)?'_'+v.label.replace(/\s+/g,''):'');
   try{
-    var r=await L.download({id:k,url:v.url,name:name,kind:m.kind});
-    cur.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size};
-    hist.unshift({t:Date.now(),uri:r.uri,mime:r.mime,size:r.size,thumb:m.thumb,kind:m.kind,q:v.label,name:cur.tw.name,handle:cur.tw.handle,text:cur.tw.text,link:'https://x.com/'+(cur.tw.handle||'i')+'/status/'+cur.tw.id});
+    var opt={id:k,url:v.url,name:name,kind:kind,ext:v.ext||(kind==='video'?'mp4':''),chunked:!!v.chunked};
+    if(v.audio)opt.audio=v.audio;
+    var h=v.headers||m.headers;if(h)opt.headers=h;
+    if(v.cookies)opt.cookies=true;
+    var r=await L.download(opt);
+    cur.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size,kind:kind};
+    var th=await smallThumb(m.thumb,m.headers);
+    hist.unshift({t:Date.now(),p:tw.p,uri:r.uri,mime:r.mime,size:r.size,thumb:th,kind:kind,q:v.label,name:tw.name,handle:tw.handle,text:tw.text,link:tw.link});
     saveHist();
-    toast(m.kind==='image'?'Bild gespeichert: Galerie › Pictures/Fox Loader':'Video gespeichert: Galerie › Movies/Fox Loader');
+    toast((kind==='image'?'Bild':kind==='audio'?'Ton':'Video')+' gespeichert: '+folderOf(kind));
   }catch(e){
     var msg=errText(e);
     if(msg==='storage'){cur.dl[k]=null;toast('Erlaube Fox Loader den Speicher und tippe nochmal auf Laden.',6000);}
@@ -377,6 +701,34 @@ async function dl(i){
     else cur.dl[k]={state:'err',msg:msg};
   }
   renderLoad();
+}
+
+/* ================= Vorschaubilder ================= */
+var thumbs={};
+function thumbKey(u){return String(u||'');}
+async function thumbData(u,h){
+  if(!u)return '';
+  if(/^data:/.test(u))return u;
+  if(thumbs[u])return thumbs[u];
+  try{var o={url:u};if(h)o.headers=h;var r=await L.image(o);thumbs[u]=r.data;return r.data;}catch(e){return '';}
+}
+async function smallThumb(u,h){
+  var d=await thumbData(u,h);if(!d)return '';
+  try{
+    return await new Promise(function(res){
+      var im=new Image();im.onload=function(){var s=Math.min(1,160/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*s));c.height=Math.max(1,Math.round(im.height*s));c.getContext('2d').drawImage(im,0,0,c.width,c.height);try{res(c.toDataURL('image/jpeg',.7));}catch(e){res('');}};
+      im.onerror=function(){res('');};im.src=d;
+    });
+  }catch(e){return '';}
+}
+function hydrate(){
+  Array.prototype.forEach.call(document.querySelectorAll('img[data-src]'),function(im){
+    var u=im.getAttribute('data-src');im.removeAttribute('data-src');
+    var mi=im.getAttribute('data-m'),h=null;
+    if(mi!=null&&cur&&cur.tw.media[+mi])h=cur.tw.media[+mi].headers;
+    if(thumbs[u]){im.src=thumbs[u];return;}
+    thumbData(u,h).then(function(d){if(d)im.src=d;else im.classList.add('gone');});
+  });
 }
 
 /* ================= Ansichten ================= */
@@ -388,70 +740,78 @@ function renderLoad(){
   var inp=$('#url'),val=inp?inp.value:'';
   var h='<div class="view">';
   if(!isNative()){
-    h+='<div class="box"><b>Nur in der App</b><p class="hint">Installiere die APK auf deinem Handy, dann kannst du Videos von X speichern.</p></div></div>';
+    h+='<div class="box"><b>Nur in der App</b><p class="hint">Installiere die APK auf deinem Handy, dann kannst du Videos speichern.</p></div></div>';
     $('#main').innerHTML=h;return;
   }
-  h+='<div class="hero"><h2>Video von X speichern</h2>'+
-    '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen: x.com/…/status/…" value="'+esc(val)+'" aria-label="Link zum Post">'+
+  h+='<div class="hero"><h2>Video speichern</h2>'+
+    '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen" value="'+esc(val)+'" aria-label="Link zum Beitrag">'+
     '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
-    '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button></div>';
+    '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button>'+
+    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>andere Seiten</span></div></div>';
 
   if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
+  if(needLogin){
+    var nm=needLogin==='facebook'?'Facebook':'Instagram';
+    h+='<div class="box"><b>Bei '+nm+' anmelden</b><p class="hint">'+nm+' zeigt diesen Beitrag nur angemeldet. Melde dich einmal in Fox Loader an, danach klappt es. Dein Passwort gibst du direkt bei '+nm+' ein, Fox Loader speichert es nicht.</p>'+
+      '<button class="btn pri wide" data-act="login" data-k="'+needLogin+'">Bei '+nm+' anmelden</button></div>';
+  }
 
   if(cur){
     var tw=cur.tw;
-    h+='<div class="box"><div class="tw">'+(tw.avatar?'<img src="'+esc(tw.avatar)+'" alt="">':'')+
-      '<div class="tx"><b>'+esc(tw.name||'Post auf X')+'</b><small>'+(tw.handle?'@'+esc(tw.handle):'')+'</small></div>'+
+    h+='<div class="box"><div class="tw">'+(tw.avatar?'<img data-src="'+esc(tw.avatar)+'" alt="">':'<span class="pf">'+esc(PLAT[tw.p]||'')+'</span>')+
+      '<div class="tx"><b>'+esc(tw.name||PLAT[tw.p]||'Beitrag')+'</b><small>'+esc(PLAT[tw.p]||'')+(tw.handle?' · '+(/^[ur]\//.test(tw.handle)?'':'@')+esc(tw.handle):'')+'</small></div>'+
       '<button class="ib" data-act="clear" aria-label="Schließen">'+ic('x')+'</button></div>'+
-      (tw.text?'<p class="ttext">'+esc(tw.text.replace(/\s*https:\/\/t\.co\/\w+\s*$/,''))+'</p>':'')+'</div>';
-    if(tw.media.length>1){
-      var open=tw.media.filter(function(m,i){var d=cur.dl[tw.id+'-'+i];return !d||d.state==='err';}).length;
-      if(open>1)h+='<button class="btn grn wide" data-act="all">'+ic('down')+'Alle '+open+' laden</button>';
-    }
+      (tw.text?'<p class="ttext">'+esc(String(tw.text).replace(/\s*https:\/\/t\.co\/\w+\s*$/,''))+'</p>':'')+'</div>';
+    var openN=tw.media.filter(function(m,i){var d=cur.dl[tw.id+'-'+i];return m.kind!=='audio'&&(!d||d.state==='err');}).length;
+    if(openN>1)h+='<button class="btn grn wide" data-act="all">'+ic('down')+'Alle '+openN+' laden</button>';
     tw.media.forEach(function(m,i){
-      var k=tw.id+'-'+i,d=cur.dl[k],sel=cur.sel[i]||0;
-      h+='<div class="med"><div class="pv">'+(m.thumb?'<img src="'+esc(m.thumb)+'" alt="" loading="lazy">':'')+
-        (m.kind==='video'?'<span class="pl">'+ic('play')+'</span>':'')+
-        '<span class="tag">'+(m.kind==='image'?'Bild':m.gif?'GIF':'Video')+(m.dur?' · '+tm(m.dur):'')+'</span></div><div class="bd">';
+      var k=tw.id+'-'+i,d=cur.dl[k],sel=cur.sel[i]||0,v=m.variants[sel];
+      var kind=v.kind||m.kind;
+      h+='<div class="med'+(m.kind==='audio'?' aud':'')+'"><div class="pv">'+(m.thumb?'<img data-src="'+esc(m.thumb)+'" data-m="'+i+'" alt="">':'')+
+        (m.kind==='video'?'<span class="pl">'+ic('play')+'</span>':m.kind==='audio'?'<span class="pl">'+ic('music')+'</span>':'')+
+        '<span class="tag">'+(m.kind==='image'?'Bild':m.kind==='audio'?'Nur Ton':m.gif?'GIF':'Video')+(m.dur?' · '+tm(m.dur):'')+'</span></div><div class="bd">';
       if(m.variants.length>1&&!(d&&(d.state==='run'||d.state==='done'))){
-        h+='<div class="chips">'+m.variants.map(function(v,j){
-          return '<button class="chip" data-act="q" data-i="'+i+'" data-j="'+j+'" aria-pressed="'+(j===sel)+'">'+esc(v.label||('Stufe '+(j+1)))+(j===0?' · beste':'')+'</button>';
+        h+='<div class="chips">'+m.variants.map(function(x,j){
+          return '<button class="chip" data-act="q" data-i="'+i+'" data-j="'+j+'" aria-pressed="'+(j===sel)+'">'+esc(x.label||('Stufe '+(j+1)))+(x.size?' · '+mb(x.size):'')+'</button>';
         }).join('')+'</div>';
-      }
+      }else if(v.size&&!(d&&d.state==='done'))h+='<small class="hint">'+esc(v.label||'')+' · '+mb(v.size)+'</small>';
       if(d&&d.state==='run'){
-        h+='<div class="sl"><span style="color:var(--fg)">Wird geladen …</span><span id="pp-'+k+'">'+(d.pct>=0?(d.pct||0)+' %':'')+'</span></div>'+
+        h+='<div class="sl"><span style="color:var(--fg)" id="ph-'+k+'">'+phaseText(d.phase)+'</span><span id="pp-'+k+'">'+(d.pct>=0?(d.pct||0)+' %':'')+'</span></div>'+
           '<div class="prog"><i id="pb-'+k+'" style="width:'+(d.pct>0?d.pct:3)+'%"></i></div>'+
           '<button class="btn sm" data-act="stop" data-k="'+k+'">Abbrechen</button>';
       }else if(d&&d.state==='done'){
         h+='<div class="ok">'+ic('check')+'Gespeichert'+(d.size?' · '+mb(d.size):'')+'</div>'+
-          '<div class="row"><button class="btn pri" data-act="play" data-uri="'+esc(d.uri)+'" data-mime="'+esc(d.mime)+'">'+ic(m.kind==='image'?'img':'play')+(m.kind==='image'?'Ansehen':'Abspielen')+'</button>'+
+          '<div class="row"><button class="btn pri" data-act="play" data-uri="'+esc(d.uri)+'" data-mime="'+esc(d.mime)+'">'+ic(d.kind==='image'?'img':'play')+(d.kind==='image'?'Ansehen':'Abspielen')+'</button>'+
           '<button class="btn" data-act="share" data-uri="'+esc(d.uri)+'" data-mime="'+esc(d.mime)+'">'+ic('share')+'Teilen</button></div>';
       }else{
         if(d&&d.state==='err')h+='<div class="err">Fehler beim Laden: '+esc(d.msg)+'</div>';
-        h+='<button class="btn pri wide" data-act="dl" data-i="'+i+'">'+ic('down')+(m.kind==='image'?'Bild speichern':'Video speichern')+'</button>';
+        h+='<button class="btn '+(m.kind==='audio'?'':'pri ')+'wide" data-act="dl" data-i="'+i+'">'+ic(m.kind==='audio'?'music':'down')+(kind==='image'?'Bild speichern':kind==='audio'?'Nur Ton speichern':'Video speichern')+'</button>';
       }
       h+='</div></div>';
     });
-  }else if(!busy){
-    h+='<div class="how"><div><b>1</b>In X auf Teilen tippen</div><div><b>2</b>„Fox Loader“ wählen oder Link kopieren</div><div><b>3</b>Video ist in der Galerie</div></div>'+
-      '<p class="note">Funktioniert mit öffentlichen Posts: Videos, GIFs und Bilder, auch mehrere in einem Post. Kurzlinks (t.co) gehen auch.</p>';
+  }else if(!busy&&!lastErr&&!needLogin){
+    h+='<div class="how"><div><b>1</b>In der App auf Teilen tippen</div><div><b>2</b>„Fox Loader“ wählen oder Link kopieren</div><div><b>3</b>Video ist in der Galerie</div></div>'+
+      '<p class="note">Funktioniert mit öffentlichen Beiträgen: Videos, Reels, Storys, GIFs und Bilder, auch mehrere in einem Beitrag. Bei Instagram und Facebook brauchst du für manche Beiträge eine Anmeldung (Einstellungen › Konten).</p>';
   }
   $('#main').innerHTML=h+'</div>';
+  hydrate();
 }
 
 function renderList(){
   var h='<div class="view">';
   if(!hist.length){
-    h+='<div class="empty">'+ic('film')+'<b>Noch nichts geladen</b><span>Deine gespeicherten Videos und Bilder erscheinen hier.</span><button class="btn pri" data-act="tab-load">'+ic('down')+'Erstes Video laden</button></div>';
+    h+='<div class="empty">'+ic('film')+'<b>Noch nichts geladen</b><span>Deine gespeicherten Videos, Bilder und Töne erscheinen hier.</span><button class="btn pri" data-act="tab-load">'+ic('down')+'Erstes Video laden</button></div>';
   }else{
     h+='<div class="row" style="justify-content:space-between"><h2>'+hist.length+(hist.length===1?' Download':' Downloads')+'</h2><button class="btn sm" data-act="clearhist">Liste leeren</button></div>';
     hist.forEach(function(x,i){
-      h+='<div class="hist"><div class="th" style="'+(x.thumb?'background-image:url('+esc(x.thumb)+')':'')+'">'+(x.thumb?'':ic(x.kind==='image'?'img':'film'))+'</div>'+
-        '<div class="tx"><b>'+esc(x.name||'Post auf X')+(x.handle?' · @'+esc(x.handle):'')+'</b>'+
-        '<small>'+(x.kind==='image'?'Bild':'Video')+(x.q&&x.q!=='Original'?' · '+esc(x.q):'')+(x.size?' · '+mb(x.size):'')+' · '+dateDE(x.t)+'</small>'+
+      var k=x.kind==='image'?'Bild':x.kind==='audio'?'Ton':'Video';
+      var th=/^data:/.test(x.thumb||'')||(x.thumb&&/twimg\.com/.test(x.thumb))?x.thumb:'';
+      h+='<div class="hist"><div class="th" style="'+(th?'background-image:url('+esc(th)+')':'')+'">'+(th?'':ic(x.kind==='image'?'img':x.kind==='audio'?'music':'film'))+'</div>'+
+        '<div class="tx"><b>'+esc(x.name||PLAT[x.p||'x']||'Beitrag')+'</b>'+
+        '<small>'+esc(PLAT[x.p||'x']||'')+' · '+k+(x.q&&!/^(Original|Video|Standard)/.test(x.q)?' · '+esc(x.q):'')+(x.size?' · '+mb(x.size):'')+'<br>'+dateDE(x.t)+'</small>'+
         '<div class="acts"><button class="ib sm" data-act="play" data-uri="'+esc(x.uri)+'" data-mime="'+esc(x.mime)+'" aria-label="Öffnen">'+ic('play')+'</button>'+
         '<button class="ib sm" data-act="share" data-uri="'+esc(x.uri)+'" data-mime="'+esc(x.mime)+'" aria-label="Teilen">'+ic('share')+'</button>'+
-        '<button class="ib sm" data-act="post" data-i="'+i+'" aria-label="Post auf X öffnen">'+ic('link')+'</button>'+
+        (x.link?'<button class="ib sm" data-act="post" data-i="'+i+'" aria-label="Beitrag öffnen">'+ic('link')+'</button>':'')+
         '<button class="ib sm" data-act="del" data-i="'+i+'" aria-label="Löschen">'+ic('trash')+'</button></div></div></div>';
     });
   }
@@ -464,16 +824,24 @@ function openSheet(html){var s=$('#sheet');s.innerHTML='<div class="grip"></div>
 function closeSheet(){$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
 $('#scrim').addEventListener('click',closeSheet);
 async function loadVer(){var P=plug('Updater');if(!P||appVer)return;try{var i=await P.info();appVer={code:Number(i.versionCode),name:String(i.versionName||'')};}catch(e){}}
+async function refreshLogins(){if(!L)return;try{logins=await L.logins();}catch(e){}}
+function accRow(site,nm){
+  var on=logins[site];
+  return '<div class="srow line"><div><b>'+nm+'</b><br><small>'+(on?'Angemeldet':'Nicht angemeldet')+'</small></div>'+
+    '<button class="btn sm'+(on?'':' pri')+'" data-act="'+(on?'logout':'login')+'" data-k="'+site+'">'+(on?'Abmelden':'Anmelden')+'</button></div>';
+}
 async function settingsSheet(){
-  await loadVer();
+  await loadVer();await refreshLogins();
   function q(k,t){return '<button class="chip" data-act="setq" data-k="'+k+'" aria-pressed="'+(set.q===k)+'">'+t+'</button>';}
   openSheet('<h3>Einstellungen</h3>'+
     '<div class="srow"><b>Qualität vorauswählen</b><div class="chips">'+q('best','Beste')+q('mid','Bis 720p')+q('small','Kleinste')+'</div><small>Du kannst sie bei jedem Video noch ändern.</small></div>'+
-    '<div class="srow line"><div><b>Beim Teilen sofort laden</b><br><small>Teilen an Fox Loader speichert das Video direkt</small></div><input type="checkbox" class="sw" id="shareDl"'+(set.shareDl?' checked':'')+' aria-label="Beim Teilen sofort laden"></div>'+
+    '<div class="srow line"><div><b>Beim Teilen sofort laden</b><br><small>Teilen an Fox Loader speichert direkt</small></div><input type="checkbox" class="sw" id="shareDl"'+(set.shareDl?' checked':'')+' aria-label="Beim Teilen sofort laden"></div>'+
     '<div class="srow line"><div><b>Kopierten Link erkennen</b><br><small>Beim Öffnen schaut Fox Loader in die Zwischenablage</small></div><input type="checkbox" class="sw" id="autoClip"'+(set.autoClip?' checked':'')+' aria-label="Kopierten Link erkennen"></div>'+
+    '<p class="lbl" style="margin:6px 0 0">Konten</p>'+accRow('instagram','Instagram')+accRow('facebook','Facebook')+
+    '<small class="hint">Nur nötig für Beiträge, die man ohne Anmeldung nicht sieht. Das Passwort gibst du direkt bei Instagram oder Facebook ein, Fox Loader speichert es nicht. Tipp: lieber ein Zweitkonto nehmen.</small>'+
     (isNative()?'<button class="srow" style="border:0;text-align:left" data-act="upd"><b>App-Update</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Tippen zum Prüfen'+(upd?' · Neu: '+upd.ver:'')+'</small></button>'+
     '<div class="srow line"><div><b>Updates automatisch suchen</b><br><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" id="autoUpd"'+(set.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen"></div>':'')+
-    '<div class="srow"><b>So funktioniert es</b><small>Fox Loader liest die öffentlichen Daten des Posts (wie bei eingebetteten Tweets auf Webseiten) und lädt die MP4-Datei direkt von X auf dein Handy. Kein Konto, keine Werbung, kein fremder Server dazwischen. Klappt das nicht, fragt Fox Loader FxTwitter oder vxTwitter.</small></div>'+
+    '<div class="srow"><b>So funktioniert es</b><small>Fox Loader liest die Daten des Beitrags direkt bei der jeweiligen Seite und lädt die Datei auf dein Handy. Bei YouTube und Reddit kommen Bild und Ton getrennt, Fox Loader fügt sie auf dem Handy zusammen. Klappt X oder TikTok nicht direkt, fragt Fox Loader FxTwitter, vxTwitter oder TikWM.</small></div>'+
     '<div class="srow"><b>Nur für dich</b><small>Videos anderer sind für den privaten Gebrauch. Die Rechte bleiben bei den Urhebern, also nicht als eigene wieder hochladen.</small></div>'+
     '<p class="hint" style="text-align:center">Fox Loader · Design by <b style="color:var(--accent)">Mr.Fox</b></p>');
   ['shareDl','autoClip','autoUpd'].forEach(function(k){var el=$('#'+k);if(el)el.addEventListener('change',function(e){set[k]=e.target.checked;saveSet();});});
@@ -536,21 +904,29 @@ document.addEventListener('click',async function(e){
       var r={text:''};try{r=await L.clip();}catch(x){}
       if(!r.text){toast('Die Zwischenablage ist leer.');break;}
       var u2=$('#url');if(u2)u2.value=r.text.trim();
-      if(hasLink(r.text))lookup(r.text);else toast('In der Zwischenablage ist kein Link von X.');
+      if(detect(r.text))lookup(r.text);else toast('In der Zwischenablage ist kein Link.');
       break;}
-    case 'clear':cur=null;lastErr='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
+    case 'clear':cur=null;lastErr='';needLogin='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
     case 'q':cur.sel[i]=+b.dataset.j;renderLoad();break;
     case 'dl':dl(i);break;
-    case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(!d||d.state==='err')dl(j);});break;
+    case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(m.kind!=='audio'&&(!d||d.state==='err'))dl(j);});break;
     case 'stop':try{await L.cancel({id:b.dataset.k});}catch(x){}break;
-    case 'play':L.play({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(err){toast('Datei nicht gefunden. Wurde sie in der Galerie gelöscht?');});break;
+    case 'play':L.play({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(){toast('Datei nicht gefunden. Wurde sie in der Galerie gelöscht?');});break;
     case 'share':L.share({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(err){toast(errText(err));});break;
     case 'post':L.openUrl({url:hist[i].link}).catch(function(){toast('Link lässt sich nicht öffnen.');});break;
-    case 'del':openSheet('<h3>Download löschen?</h3><div class="srow"><small style="color:var(--fg)">Du kannst ihn nur aus der Liste nehmen oder auch die Datei in der Galerie löschen.</small></div>'+
-      '<button class="btn pri wide" data-act="delfile" data-i="'+i+'">'+ic('trash')+'Auch aus der Galerie löschen</button><button class="btn wide" data-act="dellist" data-i="'+i+'">Nur aus der Liste</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
+    case 'login':{
+      var site=b.dataset.k,wasErr=needLogin===site;closeSheet();
+      try{var lr=await L.login({site:site});await refreshLogins();
+        if(lr.ok){toast('Angemeldet bei '+(site==='facebook'?'Facebook':'Instagram')+'.');if(wasErr){var u4=$('#url');lookup(u4?u4.value:'');}}
+        else toast('Nicht angemeldet. Melde dich im Fenster an und tippe dann auf „Fertig“.',6000);
+      }catch(x){toast(errText(x));}
+      break;}
+    case 'logout':{var s2=b.dataset.k;try{await L.logout({site:s2});}catch(x){}await refreshLogins();toast('Abgemeldet.');settingsSheet();break;}
+    case 'del':openSheet('<h3>Download löschen?</h3><div class="srow"><small style="color:var(--fg)">Du kannst ihn nur aus der Liste nehmen oder auch die Datei auf dem Handy löschen.</small></div>'+
+      '<button class="btn pri wide" data-act="delfile" data-i="'+i+'">'+ic('trash')+'Auch die Datei löschen</button><button class="btn wide" data-act="dellist" data-i="'+i+'">Nur aus der Liste</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
     case 'delfile':closeSheet();try{await L.remove({uri:hist[i].uri});}catch(x){toast('Datei ließ sich nicht löschen, sie ist nur aus der Liste raus.');}hist.splice(i,1);saveHist();renderList();break;
     case 'dellist':closeSheet();hist.splice(i,1);saveHist();renderList();break;
-    case 'clearhist':openSheet('<h3>Liste leeren?</h3><div class="srow"><small style="color:var(--fg)">Die Dateien bleiben in deiner Galerie.</small></div><button class="btn pri wide" data-act="clearyes">Ja, Liste leeren</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
+    case 'clearhist':openSheet('<h3>Liste leeren?</h3><div class="srow"><small style="color:var(--fg)">Die Dateien bleiben auf deinem Handy.</small></div><button class="btn pri wide" data-act="clearyes">Ja, Liste leeren</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
     case 'clearyes':closeSheet();hist=[];saveHist();renderList();break;
     case 'setq':set.q=b.dataset.k;saveSet();Array.prototype.forEach.call(b.parentNode.children,function(c){c.setAttribute('aria-pressed',String(c===b));});break;
     case 'upd':closeSheet();checkUpdate(true);break;
@@ -561,8 +937,8 @@ document.addEventListener('click',async function(e){
 /* ================= Start ================= */
 function takeShared(t){
   if(!t)return;
-  if(!hasLink(t)){toast('Im Geteilten ist kein Link zu einem Post auf X.');return;}
-  lastClip=t;save('fl-clip',lastClip);
+  if(!detect(t)){toast('Im Geteilten ist kein Link.');return;}
+  lastClip=t.trim();save('fl-clip',lastClip);
   render();var u=$('#url');if(u)u.value=t.trim();
   lookup(t,true);
 }
@@ -570,9 +946,9 @@ async function checkClip(){
   if(!L||!set.autoClip||busy)return;
   try{
     var r=await L.clip(),t=String(r.text||'').trim();
-    if(!t||t===lastClip||!hasLink(t))return;
+    if(!t||t===lastClip)return;
+    var d=detect(t);if(!d||d.p==='web')return;
     lastClip=t;save('fl-clip',lastClip);
-    if(cur&&findId(t)===cur.tw.id)return;
     go('load');var u=$('#url');if(u)u.value=t;
     toast('Kopierter Link erkannt.');
     lookup(t);
@@ -581,6 +957,7 @@ async function checkClip(){
 render();
 setTimeout(function(){$('#splash').classList.add('hide');},900);
 if(L){
+  refreshLogins();
   try{L.addListener('shared',function(e){takeShared(e&&e.text);});}catch(x){}
   L.getShared().then(function(r){if(r&&r.text)takeShared(r.text);else setTimeout(checkClip,700);}).catch(function(){});
   document.addEventListener('visibilitychange',function(){if(!document.hidden)setTimeout(checkClip,400);});
