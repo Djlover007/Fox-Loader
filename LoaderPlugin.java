@@ -346,12 +346,29 @@ public class LoaderPlugin extends Plugin {
     // ---------------- Anmeldung (Instagram, Facebook) ----------------
 
     private static String siteUrl(String site) {
-        return "facebook".equals(site) ? "https://www.facebook.com" : "https://www.instagram.com";
+        return "facebook".equals(site) ? "https://www.facebook.com" : "x".equals(site) ? "https://x.com" : "https://www.instagram.com";
     }
 
     private static boolean loggedIn(String site) {
         String c = webCookies(siteUrl(site));
-        return "facebook".equals(site) ? c.contains("c_user=") : c.contains("sessionid=");
+        return "facebook".equals(site) ? c.contains("c_user=") : "x".equals(site) ? c.contains("auth_token=") : c.contains("sessionid=");
+    }
+
+    // Einzelnes Cookie lesen (z. B. ct0 fuer X)
+    @PluginMethod
+    public void cookie(PluginCall call) {
+        String all = webCookies(call.getString("url", "https://x.com"));
+        String name = call.getString("name", "");
+        String val = "";
+        for (String part : all.split(";")) {
+            String[] kv = part.trim().split("=", 2);
+            if (kv.length == 2 && kv[0].equals(name)) {
+                val = kv[1];
+            }
+        }
+        JSObject o = new JSObject();
+        o.put("value", val);
+        call.resolve(o);
     }
 
     @PluginMethod
@@ -359,6 +376,7 @@ public class LoaderPlugin extends Plugin {
         JSObject o = new JSObject();
         o.put("instagram", loggedIn("instagram"));
         o.put("facebook", loggedIn("facebook"));
+        o.put("x", loggedIn("x"));
         call.resolve(o);
     }
 
@@ -367,8 +385,9 @@ public class LoaderPlugin extends Plugin {
         String site = call.getString("site", "instagram");
         String[] domains = "facebook".equals(site)
                 ? new String[]{"https://www.facebook.com", "https://m.facebook.com", "https://facebook.com"}
+                : "x".equals(site) ? new String[]{"https://x.com", "https://twitter.com"}
                 : new String[]{"https://www.instagram.com", "https://instagram.com"};
-        String dom = "facebook".equals(site) ? ".facebook.com" : ".instagram.com";
+        String dom = "facebook".equals(site) ? ".facebook.com" : "x".equals(site) ? ".x.com" : ".instagram.com";
         CookieManager cm = CookieManager.getInstance();
         for (String d : domains) {
             String all = cm.getCookie(d);
@@ -416,7 +435,7 @@ public class LoaderPlugin extends Plugin {
                     int pad = dp(act, 10);
                     bar.setPadding(dp(act, 16), pad, pad, pad);
                     TextView t = new TextView(act);
-                    t.setText("facebook".equals(site) ? "Bei Facebook anmelden" : "Bei Instagram anmelden");
+                    t.setText("facebook".equals(site) ? "Bei Facebook anmelden" : "x".equals(site) ? "Bei X anmelden" : "Bei Instagram anmelden");
                     t.setTextColor(Color.WHITE);
                     t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
                     bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -437,7 +456,7 @@ public class LoaderPlugin extends Plugin {
                     CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
                     w.setWebViewClient(new WebViewClient());
                     root.addView(w, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-                    w.loadUrl("facebook".equals(site) ? "https://m.facebook.com/login/" : "https://www.instagram.com/accounts/login/");
+                    w.loadUrl("facebook".equals(site) ? "https://m.facebook.com/login/" : "x".equals(site) ? "https://x.com/i/flow/login" : "https://www.instagram.com/accounts/login/");
 
                     done.setOnClickListener(v -> d.dismiss());
                     d.setOnDismissListener(di -> {

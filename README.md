@@ -16,6 +16,7 @@ Zusätzlich:
 - YouTube bis 1080p, Bild und Ton werden auf dem Handy zusammengefügt; „Nur Ton“ als M4A
 - andere Seiten: Fox Loader sucht MP4-Videos auf der Seite
 - Kurzlinks (t.co, vm.tiktok.com, fb.watch, redd.it, youtu.be)
+- **X-Profile:** Link zu einem Profil einfügen (x.com/name), alle Videos als Raster sehen, auswählen und viele auf einmal laden (X-Anmeldung in der App nötig)
 - Liste „Meine Downloads“: abspielen, teilen, Post öffnen, löschen
 
 Die Daten kommen direkt von den Seiten; als Ersatz FxTwitter, vxTwitter und TikWM. Keine Werbung. YouTube und Instagram ändern ihre Schnittstellen öfter, dann hilft ein App-Update.
