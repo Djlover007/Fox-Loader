@@ -629,8 +629,74 @@ async function ytUrlOk(url,ua,len){
   return '';
 }
 function ytId(u){var m=String(u).match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([\w-]{11})/);return m?m[1]:null;}
+// Ausweichweg: öffentliche Piped-/Invidious-Server (erzeugen das YouTube-Token selbst und reichen durch)
+var ytAltCache=null;
+async function ytAltServers(){
+  if(ytAltCache)return ytAltCache;
+  var piped=['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.leptons.xyz'],inv=['https://inv.nadeko.net','https://invidious.nerdvpn.de','https://yewtu.be','https://invidious.privacyredirect.com'];
+  try{var r=await get('https://piped-instances.kavin.rocks/');if(r.status===200){JSON.parse(r.body).forEach(function(x){if(x.api_url&&piped.indexOf(x.api_url)<0)piped.push(x.api_url);});}}catch(e){}
+  try{var r2=await get('https://api.invidious.io/instances.json?sort_by=health');if(r2.status===200){JSON.parse(r2.body).forEach(function(x){var o=x[1]||{};if(o.api&&o.type==='https'&&o.uri&&inv.indexOf(o.uri)<0)inv.push(o.uri);});}}catch(e){}
+  ytAltCache={piped:piped.slice(0,8),inv:inv.slice(0,8)};
+  return ytAltCache;
+}
+async function ytAlt(id){
+  var sv=await ytAltServers(),why=[],UA0=null;
+  function mk(title,author,dur,vs,au,via){
+    var th='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',media=[];
+    if(vs.length)media.push({kind:'video',thumb:th,dur:dur,variants:vs});
+    if(au)media.push({kind:'audio',thumb:th,dur:dur,variants:[{url:au.url,label:'MP3',ext:'mp3',mp3:true},{url:au.url,label:'M4A',ext:'m4a',size:au.size||0}]});
+    return {id:id,text:title||'',name:(author||'YouTube')+' · über '+via,handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id,ytClient:YTC.length};
+  }
+  for(var i=0;i<sv.piped.length;i++){
+    var base=sv.piped[i],host=base.replace(/^https:\/\//,'');
+    try{
+      var j=await getJson(base+'/streams/'+id);
+      if(j.error)throw new Error(String(j.error).slice(0,40));
+      var auds=(j.audioStreams||[]).filter(function(a){return a.url&&/mp4|m4a/i.test(a.mimeType||a.format||'');}).sort(function(a,b){return (b.bitrate||0)-(a.bitrate||0);});
+      var au=auds[0]?{url:auds[0].url,size:+auds[0].contentLength||0}:null;
+      var vids=(j.videoStreams||[]).filter(function(v){return v.url&&/mp4/i.test(v.mimeType||v.format||'')&&(!v.codec||/avc1/i.test(v.codec));});
+      vids.sort(function(a,b){return (parseInt(b.quality)||0)-(parseInt(a.quality)||0);});
+      vids=uniq(vids,function(v){return (v.quality||'')+(v.videoOnly?'v':'m');});
+      var vs=[];
+      vids.forEach(function(v){
+        var l=String(v.quality||'').replace(/\d+fps/,'').trim()||'Video';
+        if(vs.some(function(x){return x.label===l;}))return;
+        if(v.videoOnly){if(au)vs.push({url:v.url,audio:au.url,label:l,size:(+v.contentLength||0)+(au.size||0)});}
+        else vs.push({url:v.url,label:l,size:+v.contentLength||0});
+      });
+      if(!vs.length&&!au)throw new Error('keine Formate');
+      var bad=await ytUrlOk(au?au.url:vs[0].url,LOADER_UA,au?au.size:vs[0].size);
+      if(bad)throw new Error(bad);
+      return mk(j.title,j.uploader,j.duration||0,vs,au,'Piped');
+    }catch(e){why.push(host+': '+errText(e).slice(0,30));}
+  }
+  for(var k=0;k<sv.inv.length;k++){
+    var ib=sv.inv[k],ih=ib.replace(/^https:\/\//,'');
+    try{
+      var v1=await getJson(ib+'/api/v1/videos/'+id+'?local=true');
+      var af=(v1.adaptiveFormats||[]);
+      function px(f){return ib+'/latest_version?id='+id+'&itag='+f.itag+'&local=true';}
+      var a1=af.filter(function(f){return /^audio\/mp4/.test(f.type||'');}).sort(function(a,b){return (+b.bitrate||0)-(+a.bitrate||0);})[0];
+      var au2=a1?{url:px(a1),size:+a1.clen||0}:null;
+      var vv=af.filter(function(f){return /^video\/mp4/.test(f.type||'')&&/avc1/.test(f.type||'');});
+      vv.sort(function(a,b){return (parseInt(b.resolution||b.qualityLabel)||0)-(parseInt(a.resolution||a.qualityLabel)||0);});
+      var vs2=[];
+      vv.forEach(function(f){var l=String(f.qualityLabel||f.resolution||'').replace(/\d+fps|p\d+$/,'p').replace(/pp$/,'p');if(!l||vs2.some(function(x){return x.label===l;})||!au2)return;vs2.push({url:px(f),audio:au2.url,label:l,size:(+f.clen||0)+(au2.size||0)});});
+      (v1.formatStreams||[]).forEach(function(f){var l=f.qualityLabel||f.resolution||'Video';if(/mp4/.test(f.type||'')&&!vs2.some(function(x){return x.label===l;}))vs2.push({url:ib+'/latest_version?id='+id+'&itag='+f.itag+'&local=true',label:l});});
+      vs2.sort(function(a,b){return (parseInt(b.label)||0)-(parseInt(a.label)||0);});
+      if(!vs2.length&&!au2)throw new Error('keine Formate');
+      var bad2=await ytUrlOk(au2?au2.url:vs2[0].url,LOADER_UA,au2?au2.size:0);
+      if(bad2)throw new Error(bad2);
+      return mk(v1.title,v1.author,v1.lengthSeconds||0,vs2,au2,'Invidious');
+    }catch(e){why.push(ih+': '+errText(e).slice(0,30));}
+  }
+  throw new Error('Auch die Ausweich-Server geben das Video gerade nicht heraus ('+why.slice(0,6).join(' · ')+').');
+}
+var LOADER_UA='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
 async function getYouTube(url,skip){
   skip=skip||0;
+  var id0=ytId(url);
+  if(skip>=YTC.length&&id0)return await ytAlt(id0);
   var id=ytId(url);if(!id)throw new Error('Das ist kein Link zu einem YouTube-Video.');
   var lastWhy='';
   var vis=await ytVisitorData(),tried=[];
@@ -666,7 +732,7 @@ async function getYouTube(url,skip){
       return {id:id,text:vd.title||'',name:vd.author||'YouTube',handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id,ytClient:i,ytUrl:url};
     }catch(e){lastWhy=errText(e);tried.push(c.name+' '+c.ver+': '+lastWhy.slice(0,40));}
   }
-  throw new Error('YouTube gibt das Video gerade nicht heraus. YouTube ändert das oft, ein App-Update hilft meistens. ('+(tried.length?tried.join(' · '):lastWhy).slice(0,300)+')');
+  try{var alt=await ytAlt(id);alt.ytUrl=url;return alt;}catch(e2){throw new Error('YouTube gibt das Video gerade nicht heraus. YouTube: '+(tried.length?tried.join(' · '):lastWhy).slice(0,200)+'. '+errText(e2));}
 }
 
 /* ================= Telegram (öffentliche Kanäle) ================= */
@@ -1589,7 +1655,7 @@ async function dl(i){
     try{r=v.tg?await tgDownload(v.tg,k,name,kind,v.ext||'mp4'):v.mp3?await toMp3(k,v,name,h):await L.download(opt);}
     catch(e1){
       // YouTube: Adresse abgelehnt -> nächsten Abfrageweg holen und gleich nochmal
-      if(!(/403/.test(errText(e1))&&tw.p==='youtube'&&tw.ytUrl&&tw.ytClient!=null&&tw.ytClient<YTC.length-1))throw e1;
+      if(!(/403/.test(errText(e1))&&tw.p==='youtube'&&tw.ytUrl&&tw.ytClient!=null&&tw.ytClient<YTC.length))throw e1;
       if(window.__foxProg)window.__foxProg({id:k,pct:-1,got:0,phase:'retry'});
       var nt=await getYouTube(tw.ytUrl,tw.ytClient+1);
       tw.ytClient=nt.ytClient;
