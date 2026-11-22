@@ -24,7 +24,7 @@ jobs:
           java-version: 17
       - name: Web-Dateien vorbereiten
         run: |
-          mkdir -p www && cp index.html www/index.html
+          mkdir -p www && cp index.html www/index.html && cp gram.js www/gram.js
           sed -i "s#__REPO__#${{ github.repository }}#" www/index.html
       - run: npm install
       - run: npx cap add android

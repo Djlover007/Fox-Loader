@@ -182,6 +182,12 @@ img.gone{visibility:hidden}
 .tile .ck::after{content:"";position:absolute;inset:-10px}
 .pimg{min-height:180px;display:grid;place-items:center;background:#000;border-radius:16px;overflow:hidden}
 .pimg img{width:100%;max-height:62vh;object-fit:contain;display:block}
+.sheet input[type=text],.sheet input[type=tel],.sheet input[type=password]{width:100%;border:0;border-radius:12px;background:var(--surface2);padding:12px 14px;color:var(--fg);font-size:16px;box-sizing:border-box}
+.tglist{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.tgrow{border:0;text-align:left;cursor:pointer}
+.tile .st.lk{font-size:12px;background:rgba(0,0,0,.6)}
+.qrbox{background:#fff;border-radius:16px;padding:10px;width:min(260px,70vw);margin:4px auto}
+.qrbox svg{display:block;width:100%;height:auto}
 </style>
 </head>
 <body>
@@ -237,7 +243,7 @@ function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}c
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var set=Object.assign({q:'best',autoClip:true,shareDl:true,autoUpd:true},load('fl-set',{}));
 var hist=load('fl-hist',[]);
-var tab='load', cur=null, busy=false, lastErr='', needLogin='', lastClip=load('fl-clip',''), logins={instagram:false,facebook:false,x:false};
+var tab='load', cur=null, busy=false, lastErr='', needLogin='', lastClip=load('fl-clip',''), logins={instagram:false,facebook:false,x:false,telegram:!!(load('fl-tg',{}).session)};
 function saveSet(){save('fl-set',set);}
 function saveHist(){while(hist.length>300)hist.pop();save('fl-hist',hist);}
 
@@ -261,10 +267,10 @@ function abs(u,base){try{return new URL(htmlDec(u),base).toString();}catch(e){re
 function pLabel(w,h){w=+w||0;h=+h||0;if(!w||!h)return '';return Math.min(w,h)+'p';}
 function uniq(list,key){var s={};return list.filter(function(x){var k=key(x);if(!k||s[k])return false;s[k]=1;return true;});}
 
-var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',web:'Webseite'};
+var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',tgpriv:'Telegram',web:'Webseite'};
 var DESK='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var L=plug('Loader');
-if(L){try{L.addListener('progress',function(e){
+if(L){try{L.addListener('progress',window.__foxProg=function(e){
   if(!cur)return;var k=String(e.id||'');var d=cur.dl[k];if(!d)return;
   d.pct=e.pct;d.got=e.got;d.phase=e.phase;
   var a=document.getElementById('pp-'+k),b=document.getElementById('pb-'+k),c=document.getElementById('ph-'+k);
@@ -664,7 +670,7 @@ function tgHead(b){
   return {title:title,avatar:av?htmlDec(av):''};
 }
 async function getTelegram(url){
-  if(/t\.me\/(?:c|joinchat)\/|t\.me\/\+/.test(url))throw new Error('Das ist ein privater Telegram-Chat oder eine private Gruppe. Fox Loader kann nur öffentliche Kanäle laden. Speichere das Video dort direkt in der Telegram-App.');
+  if(tgIsPriv(url))throw new Error('LOGIN:telegram');
   var m=url.match(/(?:t\.me|telegram\.me|telegram\.dog)\/(?:s\/)?([A-Za-z][A-Za-z0-9_]{3,31})\/(\d+)/i);
   if(!m)throw new Error('Das ist kein Link zu einem Telegram-Beitrag. Er sieht so aus: t.me/kanal/123');
   var ch=m[1],id=m[2];
@@ -709,6 +715,331 @@ async function tgProfilePage(pr){
   if(!posts.length||minId===null||minId<=1||String(minId)===String(pr.cursor))pr.done=true;
   pr.cursor=minId;
   pr.big=(pr.big||0)+posts.reduce(function(a,p){return a+p.big;},0);
+}
+
+
+/* ================= Telegram mit Anmeldung (private Kanäle, Gruppen, Chats) ================= */
+var tgC=null,tgAuthed=false,tgLoading=null,TGM={},tgL={},tgDialogs=[],tgCancel={};
+var TGLOCK='Speichern ist in diesem Chat gesperrt. Wenn es dein Kanal ist: Kanal-Info › Bearbeiten › Kanaltyp › „Speichern von Inhalten beschränken“ ausschalten, dann geht es.';
+function tgStore(){return load('fl-tg',{});}
+function tgSave(o){save('fl-tg',o);}
+function tgIsPriv(u){return /t\.me\/(?:c\/\d+|\+[\w-]+|joinchat\/[\w-]+)/i.test(String(u||''));}
+function tgLib(){
+  if(window.FoxTG)return Promise.resolve();
+  if(tgLoading)return tgLoading;
+  tgLoading=new Promise(function(ok,no){var s=document.createElement('script');s.src='gram.js';s.onload=function(){ok();};s.onerror=function(){tgLoading=null;no(new Error('Telegram-Teil der App fehlt. Bitte App aktualisieren.'));};document.head.appendChild(s);});
+  return tgLoading;
+}
+async function tgNew(sess){
+  var st=tgStore();await tgLib();
+  if(!st.apiId||!st.apiHash)throw new Error('LOGIN:telegram');
+  var c=new FoxTG.TelegramClient(new FoxTG.StringSession(sess||''),Number(st.apiId),String(st.apiHash),
+    {connectionRetries:3,useWSS:true,deviceModel:'Fox Loader',systemVersion:'Android',appVersion:'1.0',langCode:'de',systemLangCode:'de'});
+  try{c.setLogLevel('error');}catch(e){}
+  await c.connect();
+  return c;
+}
+async function tgReady(){
+  var st=tgStore();
+  if(!st.session||!st.apiId)throw new Error('LOGIN:telegram');
+  if(!tgC)tgC=await tgNew(st.session);
+  else if(!tgC.connected){try{await tgC.connect();}catch(e){tgC=await tgNew(st.session);}}
+  if(!tgAuthed){
+    var ok=false;try{ok=await tgC.checkAuthorization();}catch(e){ok=false;}
+    if(!ok){st.session='';tgSave(st);logins.telegram=false;tgC=null;throw new Error('LOGIN:telegram');}
+    tgAuthed=true;
+  }
+  return tgC;
+}
+function tgErr(e){
+  var m=String((e&&(e.errorMessage||e.message))||e||'');
+  var s=e&&e.seconds;
+  if(/FLOOD/.test(m))return 'Telegram bremst gerade. Warte '+(s?Math.ceil(s/60)+' Minute'+(Math.ceil(s/60)>1?'n':''):'ein paar Minuten')+' und versuch es dann nochmal.';
+  if(/PHONE_NUMBER_INVALID/.test(m))return 'Die Telefonnummer stimmt nicht. Bitte mit Ländervorwahl, z. B. +49 171 1234567.';
+  if(/API_ID_INVALID|API_ID_PUBLISHED_FLOOD/.test(m))return 'api_id oder api_hash stimmen nicht. Bitte auf my.telegram.org nochmal genau abschreiben.';
+  if(/PHONE_CODE_INVALID/.test(m))return 'Der Code stimmt nicht. Bitte nochmal eingeben.';
+  if(/PHONE_CODE_EXPIRED/.test(m))return 'Der Code ist abgelaufen. Fordere einen neuen an.';
+  if(/PASSWORD_HASH_INVALID/.test(m))return 'Das Passwort stimmt nicht.';
+  if(/PHONE_NUMBER_UNOCCUPIED|SignUpRequired/.test(m))return 'Zu dieser Nummer gibt es kein Telegram-Konto.';
+  if(/CHANNEL_PRIVATE|CHAT_FORBIDDEN|INVITE_HASH/.test(m))return 'Kein Zugriff auf diesen Chat. Bist du dort Mitglied?';
+  return m||'Unbekannter Fehler';
+}
+function tgSheet(step,msg){
+  var st=tgStore();tgL.step=step;
+  var e=msg?'<div class="err">'+esc(msg)+'</div>':'';
+  var cancel='<button class="btn wide" data-act="close">Abbrechen</button>';
+  if(step==='api')openSheet('<h3>Telegram verbinden</h3>'+e+
+    '<div class="srow"><b>Einmalig: eigener Schlüssel</b><small>1. Tippe auf „my.telegram.org öffnen“.<br>2. Gib deine Telefonnummer mit +49 ein. Den Code bekommst du in Telegram.<br>3. Tippe auf „API development tools“.<br>4. Fülle aus: App title „Fox Loader“, Short name „foxloader“, Platform „Android“. Dann „Create application“.<br>5. Kopiere „App api_id“ und „App api_hash“ hier rein.</small></div>'+
+    '<button class="btn wide" data-act="tgweb">my.telegram.org öffnen</button>'+
+    '<input type="text" id="tgid" inputmode="numeric" autocomplete="off" placeholder="api_id (nur Zahlen)" value="'+esc(st.apiId||'')+'">'+
+    '<input type="text" id="tghash" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="api_hash (32 Zeichen)" value="'+esc(st.apiHash||'')+'">'+
+    '<button class="btn pri wide" data-act="tgapi">Weiter</button>'+cancel);
+  else if(step==='phone')openSheet('<h3>Bei Telegram anmelden</h3>'+e+
+    '<div class="srow"><small>Deine Telefonnummer mit Ländervorwahl, z. B. +49 171 1234567. Telegram schickt dir dann einen Code.</small></div>'+
+    '<input type="tel" id="tgphone" autocomplete="tel" placeholder="+49 …" value="'+esc(tgL.phone||'')+'">'+
+    '<button class="btn pri wide" data-act="tgphone">Code anfordern</button><button class="btn wide" data-act="tgqr">Mit QR-Code anmelden</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
+  else if(step==='code')openSheet('<h3>Code eingeben</h3>'+e+
+    '<div class="srow"><small>Telegram hat dir einen Code '+(tgL.viaApp?'in der Telegram-App (Chat „Telegram“)':'per SMS')+' geschickt.</small></div>'+
+    '<input type="text" id="tgcode" inputmode="numeric" autocomplete="one-time-code" placeholder="Code">'+
+    '<button class="btn pri wide" data-act="tgcode">Anmelden</button>'+cancel);
+  else if(step==='pw')openSheet('<h3>Telegram-Passwort</h3>'+e+
+    '<div class="srow"><small>Dein Konto ist mit einem Passwort geschützt (zweistufige Bestätigung). Gib es hier ein.'+(tgL.hint?' Hinweis: '+esc(tgL.hint):'')+'</small></div>'+
+    '<input type="password" id="tgpw" autocomplete="current-password" placeholder="Passwort">'+
+    '<button class="btn pri wide" data-act="tgpw">Anmelden</button>'+cancel);
+  else if(step==='qrerr')openSheet('<h3>Telegram</h3>'+e+'<button class="btn pri wide" data-act="tgqr">Nochmal versuchen</button><button class="btn wide" data-act="tgphoneway">Mit Telefonnummer anmelden</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
+  else if(step==='busy')openSheet('<h3>Telegram</h3><div class="srow"><span><span class="spin"></span> '+esc(msg||'Bitte warten …')+'</span></div>');
+}
+function tgLoginSheet(){var st=tgStore();if(st.apiId&&st.apiHash)tgQrLogin();else{tgL.afterApi='qr';tgSheet('api');}}
+async function tgAct(a){
+  var st=tgStore(),v;
+  try{
+    if(a==='tgapi'){
+      var id=($('#tgid').value||'').trim(),hs=($('#tghash').value||'').trim();
+      if(!/^\d{3,12}$/.test(id))return tgSheet('api','api_id besteht nur aus Zahlen.');
+      if(!/^[a-f0-9]{32}$/i.test(hs))return tgSheet('api','api_hash hat genau 32 Zeichen (Zahlen und a bis f).');
+      st.apiId=id;st.apiHash=hs;tgSave(st);if(tgL.afterApi==='phone')tgSheet('phone');else tgQrLogin();
+    }else if(a==='tgkey'){tgL.afterApi='qr';tgSheet('api');}
+    else if(a==='tgphone'){
+      v=($('#tgphone').value||'').replace(/[\s()\/-]/g,'');
+      if(/^00/.test(v))v='+'+v.slice(2);if(/^0/.test(v))v='+49'+v.slice(1);
+      if(!/^\+\d{7,15}$/.test(v))return tgSheet('phone','Bitte die Nummer mit Ländervorwahl eingeben, z. B. +49 171 1234567.');
+      tgL.phone=v;tgSheet('busy','Verbinde mit Telegram …');
+      if(tgL.c){try{await tgL.c.disconnect();}catch(e){}}
+      tgL.c=await tgNew('');
+      var r=await tgL.c.sendCode({apiId:Number(st.apiId),apiHash:String(st.apiHash)},v);
+      tgL.hash=r.phoneCodeHash;tgL.viaApp=r.isCodeViaApp;tgSheet('code');
+    }else if(a==='tgcode'){
+      v=($('#tgcode').value||'').replace(/\D/g,'');
+      if(!v)return tgSheet('code','Bitte den Code eingeben.');
+      tgSheet('busy','Melde an …');
+      try{
+        var res=await tgL.c.invoke(new FoxTG.Api.auth.SignIn({phoneNumber:tgL.phone,phoneCodeHash:tgL.hash,phoneCode:v}));
+        if(res&&res.className==='auth.AuthorizationSignUpRequired')return tgSheet('phone','Zu dieser Nummer gibt es kein Telegram-Konto.');
+        await tgDone();
+      }catch(e){
+        if(/SESSION_PASSWORD_NEEDED/.test(String(e.errorMessage||e.message))){
+          tgL.pwd=await tgL.c.invoke(new FoxTG.Api.account.GetPassword());tgL.hint=tgL.pwd.hint||'';tgSheet('pw');
+        }else throw e;
+      }
+    }else if(a==='tgpw'){
+      v=$('#tgpw').value||'';if(!v)return tgSheet('pw','Bitte das Passwort eingeben.');
+      if(tgL.pwRes){var pr2=tgL.pwRes;tgL.pwRes=null;tgSheet('busy','Prüfe Passwort …');pr2(v);return;}
+      tgSheet('busy','Prüfe Passwort …');
+      try{
+        var chk=await FoxTG.computeCheck(tgL.pwd,v);
+        await tgL.c.invoke(new FoxTG.Api.auth.CheckPassword({password:chk}));
+      }catch(e){if(/PASSWORD_HASH_INVALID/.test(String(e.errorMessage||e.message))){tgL.pwd=await tgL.c.invoke(new FoxTG.Api.account.GetPassword());return tgSheet('pw','Das Passwort stimmt nicht.');}throw e;}
+      await tgDone();
+    }
+  }catch(e){
+    var step=tgL.step==='busy'?(a==='tgphone'?'phone':a==='tgcode'?'code':a==='tgpw'?'pw':'phone'):tgL.step;
+    if(/PHONE_CODE_EXPIRED/.test(String(e.errorMessage||e.message)))step='phone';
+    if(/API_ID_INVALID/.test(String(e.errorMessage||e.message)))step='api';
+    tgSheet(step,tgErr(e));
+  }
+}
+async function tgDone(){
+  var st=tgStore();
+  st.session=tgL.c.session.save();tgSave(st);
+  if(tgC&&tgC!==tgL.c){try{await tgC.disconnect();}catch(e){}}
+  tgC=tgL.c;tgL={};tgAuthed=true;logins.telegram=true;
+  var nm='';try{var me=await tgC.getMe();nm=[me.firstName,me.lastName].filter(Boolean).join(' ');}catch(e){}
+  closeSheet();toast('Bei Telegram angemeldet'+(nm?' als '+nm:'')+'.');
+  var u=$('#url');
+  if(u&&tgIsPriv(u.value))lookup(u.value);else render();
+}
+async function tgLogout(){
+  try{if(tgC){await tgC.invoke(new FoxTG.Api.auth.LogOut());}}catch(e){}
+  try{if(tgC)await tgC.disconnect();}catch(e){}
+  tgC=null;tgAuthed=false;var st=tgStore();st.session='';tgSave(st);logins.telegram=false;
+}
+async function tgChats(filterText){
+  tgSheet('busy','Lade deine Chats …');
+  try{
+    var c=await tgReady();
+    if(!tgDialogs.length){
+      var ds=await c.getDialogs({limit:200});
+      tgDialogs=ds.filter(function(d){return d.entity&&(d.isChannel||d.isGroup||d.isUser);});
+    }
+    tgChatsRender('');
+  }catch(e){
+    if(/^LOGIN:/.test(errText(e)))tgLoginSheet();
+    else openSheet('<h3>Telegram</h3><div class="err">'+esc(tgErr(e))+'</div><button class="btn wide" data-act="close">Schließen</button>');
+  }
+}
+function tgChatsRender(q){
+  q=String(q||'').toLowerCase();
+  var rows=tgDialogs.map(function(d,i){
+    var t=d.title||d.name||'?';if(q&&t.toLowerCase().indexOf(q)<0)return '';
+    var kind=d.isChannel&&!d.isGroup?'Kanal':d.isGroup?'Gruppe':'Chat';
+    return '<button class="srow tgrow" data-act="tgopen" data-i="'+i+'"><b>'+esc(t)+'</b><small>'+kind+(d.entity.noforwards?' · Speichern gesperrt':'')+'</small></button>';
+  }).join('');
+  var box=$('#tglist');
+  if(box){box.innerHTML=rows||'<p class="hint">Nichts gefunden.</p>';return;}
+  openSheet('<h3>Meine Telegram-Chats</h3><small class="hint">Tippe einen Kanal, eine Gruppe oder einen Chat an, um die Videos darin zu sehen.</small>'+
+    '<input type="text" id="tgq" placeholder="Suchen …" autocomplete="off">'+
+    '<div id="tglist" class="tglist">'+(rows||'<p class="hint">Keine Chats gefunden.</p>')+'</div><button class="btn wide" data-act="close">Schließen</button>');
+  var qi=$('#tgq');if(qi)qi.addEventListener('input',function(){tgChatsRender(qi.value);});
+}
+function tgProfileFor(ent,title){
+  return {kind:'profile',p:'tgpriv',entity:ent,locked:!!ent.noforwards,dl:{},sel:{},only:'video',items:[],seen:{},cursor:0,done:false,loading:false,
+    user:{id:String(ent.id),name:title||'Telegram',handle:ent.username||'',avatar:'',count:0,prot:false}};
+}
+function tgItem(pr,msg){
+  if(!msg)return null;
+  var key='tg'+String(pr.user.id).replace(/\W/g,'')+'_'+msg.id;
+  if(pr.seen[key])return null;
+  var locked=!!(msg.noforwards||pr.locked),m;
+  if(msg.photo){m={kind:'image',thumb:'tgthumb:'+key,variants:[{tg:key,label:'Original',ext:'jpg'}]};}
+  else if(msg.document){
+    var doc=msg.document,at=doc.attributes||[];
+    var va=at.filter(function(a){return a.className==='DocumentAttributeVideo';})[0];
+    var gif=at.some(function(a){return a.className==='DocumentAttributeAnimated';});
+    if(!va&&!/^video\//.test(doc.mimeType||''))return null;
+    var size=Number(String(doc.size||0));
+    m={kind:'video',gif:gif,thumb:'tgthumb:'+key,dur:va?Number(va.duration)||0:0,variants:[{tg:key,label:size?mb(size):'Video',ext:/quicktime/.test(doc.mimeType||'')?'mov':'mp4',size:size}]};
+  }else return null;
+  pr.seen[key]=1;TGM[key]={msg:msg};
+  return {key:key,tid:String(msg.id),idx:0,multi:false,text:msg.message||'',m:m,link:pr.user.handle?'https://t.me/'+pr.user.handle+'/'+msg.id:'',locked:locked};
+}
+async function tgPrivPage(pr){
+  var c=await tgReady();
+  var msgs=await c.getMessages(pr.entity,{limit:40,offsetId:pr.cursor||0,filter:new FoxTG.Api.InputMessagesFilterPhotoVideo()});
+  var last=0;
+  for(var i=0;i<msgs.length;i++){var msg=msgs[i];if(msg&&msg.id)last=msg.id;var it=tgItem(pr,msg);if(it)pr.items.push(it);}
+  if(msgs.length<40||!last||last===pr.cursor)pr.done=true;
+  pr.cursor=last;
+}
+async function tgPrivate(url){
+  var c=await tgReady();
+  var ent=null,title='',msgId=null;
+  var m=url.match(/t\.me\/c\/(\d+)(?:\/(\d+))?(?:\/(\d+))?/i);
+  if(m){
+    msgId=m[3]||m[2]||null;
+    if(!tgDialogs.length){var ds=await c.getDialogs({limit:200});tgDialogs=ds.filter(function(d){return d.entity&&(d.isChannel||d.isGroup||d.isUser);});}
+    var d=tgDialogs.filter(function(x){return String(x.entity.id)===m[1];})[0];
+    if(!d)throw new Error('Diesen Kanal finde ich nicht in deinen Chats. Bist du dort Mitglied?');
+    ent=d.entity;title=d.title||d.name||'';
+  }else{
+    var h=(url.match(/t\.me\/(?:\+|joinchat\/)([\w-]+)/i)||[])[1];
+    var inv=await c.invoke(new FoxTG.Api.messages.CheckChatInvite({hash:h}));
+    if(inv.chat){ent=inv.chat;title=inv.chat.title||'';}
+    else throw new Error('Du bist in diesem Chat noch nicht Mitglied. Tritt zuerst in Telegram bei, dann geht es.');
+  }
+  var pr=tgProfileFor(ent,title);
+  if(!msgId)return pr;
+  var got=await c.getMessages(ent,{ids:[Number(msgId)]});
+  var msg=got&&got[0];
+  if(!msg)throw new Error('Diese Nachricht gibt es nicht (mehr).');
+  var list=[msg];
+  if(msg.groupedId){
+    try{var around=await c.getMessages(ent,{minId:msg.id-12,maxId:msg.id+12,limit:30});
+      list=around.filter(function(x){return x&&x.groupedId&&String(x.groupedId)===String(msg.groupedId);}).sort(function(a,b){return a.id-b.id;});}catch(e){}
+  }
+  var media=[];list.forEach(function(x){var it=tgItem(pr,x);if(it){it.m.locked=it.locked;media.push(it.m);}});
+  if(!media.length)throw new Error('In dieser Nachricht ist kein Video und kein Bild.');
+  return {p:'telegram',id:String(ent.id)+'_'+msg.id,text:msg.message||'',name:title,handle:ent.username||'',avatar:'',media:media,link:url};
+}
+// Anmeldung per QR-Code (oder Bestätigen-Knopf auf demselben Handy)
+async function tgQrLogin(){
+  var st=tgStore();
+  if(!st.apiId||!st.apiHash){tgL.afterApi='qr';return tgSheet('api');}
+  tgL.qrStop=false;tgSheet('busy','Verbinde mit Telegram …');
+  try{
+    if(tgL.c){try{await tgL.c.disconnect();}catch(e){}}
+    var c=await tgNew('');tgL.c=c;
+    await c.signInUserWithQrCode({apiId:Number(st.apiId),apiHash:String(st.apiHash)},{
+      qrCode:async function(code){if(tgL.qrStop)throw new Error('abgebrochen');tgQrShow(code.token);},
+      password:async function(hint){tgL.hint=hint||'';tgSheet('pw');return await new Promise(function(res){tgL.pwRes=res;});},
+      onError:async function(e){
+        if(tgL.qrStop)return true;
+        if(/PASSWORD_HASH_INVALID/.test(String(e.errorMessage||e.message))){tgSheet('pw','Das Passwort stimmt nicht.');return false;}
+        tgSheet('qrerr',tgErr(e));return true;
+      }
+    });
+    if(tgL.qrStop)return;
+    await tgDone();
+  }catch(e){
+    if(tgL.qrStop||/abgebrochen/.test(errText(e)))return;
+    if(/API_ID_INVALID/.test(String(e.errorMessage||e.message)))return tgSheet('api',tgErr(e));
+    tgSheet('qrerr',tgErr(e));
+  }
+}
+function tgB64u(b){return Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function tgQrShow(token){
+  var link='tg://login?token='+tgB64u(token);tgL.qrLink=link;
+  var q=FoxTG.qrcode(0,'M');q.addData(link);q.make();
+  var svg=q.createSvgTag({cellSize:6,margin:3,scalable:true});
+  openSheet('<h3>Mit Telegram anmelden</h3>'+
+    '<button class="btn pri wide" data-act="tgqrapp">In Telegram bestätigen (dieses Handy)</button>'+
+    '<small class="hint">Telegram öffnet sich und fragt, ob du dich anmelden willst. Tippe dort auf „Bestätigen“ und komm zurück zu Fox Loader.</small>'+
+    '<div class="qrbox">'+svg+'</div>'+
+    '<small class="hint">Oder mit einem zweiten Gerät scannen: Telegram › Einstellungen › Geräte › Gerät verbinden. Der Code erneuert sich alle 30 Sekunden.</small>'+
+    '<button class="btn wide" data-act="tgphoneway">Stattdessen mit Telefonnummer</button>'+
+    '<button class="btn wide" data-act="tgqrcancel">Abbrechen</button>');
+}
+function tgQrCancel(){tgL.qrStop=true;if(tgL.pwRes){var r=tgL.pwRes;tgL.pwRes=null;r('');}if(tgL.c){tgL.c.disconnect().catch(function(){});tgL.c=null;}closeSheet();}
+// Vorschaubilder von Telegram (höchstens 3 gleichzeitig)
+var tgTq=[],tgTr=0;
+function tgPickThumb(sizes,big){
+  var l=(sizes||[]).filter(function(s){return s.className!=='PhotoPathSize'&&s.className!=='VideoSize'&&s.className!=='PhotoSizeEmpty';});
+  var order=big?['y','x','w','m']:['m','x','s'];
+  for(var i=0;i<order.length;i++){var f=l.filter(function(s){return s.type===order[i];})[0];if(f)return f;}
+  return l.length?l[l.length-1]:null;
+}
+function tgThumb(key,big){
+  var ck='tgthumb:'+key+(big?':b':'');
+  if(thumbs[ck])return Promise.resolve(thumbs[ck]);
+  return new Promise(function(ok){tgTq.push({key:key,big:big,ok:ok});tgThumbRun();});
+}
+function tgThumbRun(){
+  while(tgTr<3&&tgTq.length){
+    var j=tgTq.shift();tgTr++;
+    (async function(j){
+      var d='';
+      try{
+        var x=TGM[j.key],c=await tgReady(),msg=x.msg;
+        var sizes=msg.photo?msg.photo.sizes:(msg.document&&msg.document.thumbs)||[];
+        var pick=tgPickThumb(sizes,j.big);
+        if(pick){var buf=await c.downloadMedia(msg,{thumb:pick});if(buf&&buf.length)d='data:image/jpeg;base64,'+Buffer.from(buf).toString('base64');}
+        if(d)thumbs['tgthumb:'+j.key+(j.big?':b':'')]=d;
+      }catch(e){d='';}
+      tgTr--;j.ok(d);tgThumbRun();
+    })(j);
+  }
+}
+async function tgDownload(key,pid,name,kind,ext){
+  var x=TGM[key];if(!x)throw new Error('Nachricht nicht mehr da. Öffne den Chat nochmal.');
+  if(x.msg.noforwards)throw new Error(TGLOCK);
+  var c=await tgReady();
+  delete tgCancel[pid];
+  await L.fileOpen({id:pid,name:name,kind:kind,ext:ext});
+  var buf=[],bl=0,got=0,total=x.msg.document?Number(String(x.msg.document.size||0)):0,lastT=0;
+  async function flush(){if(!bl)return;var b=Buffer.concat(buf);buf=[];bl=0;await L.fileWrite({id:pid,data:b.toString('base64')});}
+  var writer={write:async function(ch){
+    if(tgCancel[pid])throw new Error('abgebrochen');
+    var b=Buffer.from(ch);buf.push(b);bl+=b.length;got+=b.length;
+    if(bl>=786432)await flush();
+    var now=Date.now();if(now-lastT>250&&window.__foxProg){lastT=now;window.__foxProg({id:pid,got:got,pct:total?Math.min(99,Math.floor(got*100/total)):-1,phase:'load'});}
+  },close:function(){}};
+  try{
+    await c.downloadMedia(x.msg,{outputFile:writer});
+    await flush();
+    return await L.fileClose({id:pid});
+  }catch(e){
+    try{await L.fileAbort({id:pid});}catch(z){}
+    throw new Error(tgCancel[pid]?'abgebrochen':tgErr(e));
+  }
+}
+async function tgPreview(m,onLoad){
+  var v=m.variants[0],key=v.tg;
+  openSheet('<h3>Vorschau</h3><div class="pimg"><span class="spin"></span></div>'+
+    '<small class="hint" style="text-align:center">'+(m.kind==='video'?'Video'+(m.dur?' · '+tm(m.dur):'')+(v.size?' · '+mb(v.size):'')+'. Abspielen geht nach dem Laden in deiner Galerie.':'Bild')+'</small>'+
+    (m.locked?'<div class="err">'+esc(TGLOCK)+'</div>':'<button class="btn pri wide" data-act="pvload">'+ic('down')+(m.kind==='video'?'Video speichern':'Bild speichern')+'</button>')+
+    '<button class="btn wide" data-act="close">Schließen</button>');
+  pvCb=m.locked?null:onLoad;
+  var d=await tgThumb(key,true);if(!d)d=await tgThumb(key,false);
+  var box=$('.pimg');if(box)box.innerHTML=d?'<img src="'+d+'" alt="">':'<small class="hint">Vorschau nicht verfügbar</small>';
 }
 
 /* ================= Andere Seiten ================= */
@@ -808,7 +1139,7 @@ async function xProfileMore(){
   var pr=cur;if(!pr||pr.kind!=='profile'||pr.loading||pr.done)return;
   pr.loading=true;pr.err='';renderLoad();
   try{
-    if(pr.p==='instagram'){await igProfilePage(pr);}else if(pr.p==='telegram'){await tgProfilePage(pr);}else{
+    if(pr.p==='instagram'){await igProfilePage(pr);}else if(pr.p==='telegram'){await tgProfilePage(pr);}else if(pr.p==='tgpriv'){await tgPrivPage(pr);}else{
     var vars={userId:pr.user.id,count:40,includePromotedContent:false,withClientEventToken:false,withBirdwatchNotes:false,withVoice:true};
     if(pr.cursor)vars.cursor=pr.cursor;
     var j=await xGql('UserMedia',vars);
@@ -1034,7 +1365,8 @@ async function profWorker(pr){
     pr.dl[k]={state:'run',pct:0};profTile(k);
     var name=PLAT[pr.p]+'_'+pr.user.handle.replace(/[^\w.-]+/g,'_')+'_'+it.tid+(it.multi?'_'+(it.idx+1):'');
     try{
-      var r=await L.download({id:k,url:v.url,name:name,kind:it.m.kind,ext:v.ext||(it.m.kind==='video'?'mp4':'jpg')});
+      if(it.locked)throw new Error(TGLOCK);
+      var r=v.tg?await tgDownload(v.tg,k,name,it.m.kind,v.ext||(it.m.kind==='video'?'mp4':'jpg')):await L.download({id:k,url:v.url,name:name,kind:it.m.kind,ext:v.ext||(it.m.kind==='video'?'mp4':'jpg')});
       pr.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size};
       var th=await smallThumb(tileThumb(pr,it),it.m.headers);
       hist.unshift({t:Date.now(),p:pr.p,uri:r.uri,mime:r.mime,size:r.size,thumb:th,kind:it.m.kind,q:v.label,name:pr.user.name,handle:pr.user.handle,text:it.text,link:it.link});
@@ -1051,11 +1383,11 @@ async function profWorker(pr){
 }
 function tileInner(pr,it){
   var d=pr.dl[it.key],s=pr.sel[it.key];
-  var st=!d?'':d.state==='done'?'<span class="st ok2">'+ic('check')+'</span>':d.state==='err'?'<span class="st bad2">!</span>':d.state==='wait'?'<span class="st">…</span>':'<span class="st" id="tp-'+it.key+'">'+(d.pct>0?d.pct+'%':'…')+'</span>';
+  var st=it.locked?'<span class="st lk">Gesperrt</span>':!d?'':d.state==='done'?'<span class="st ok2">'+ic('check')+'</span>':d.state==='err'?'<span class="st bad2">!</span>':d.state==='wait'?'<span class="st">…</span>':'<span class="st" id="tp-'+it.key+'">'+(d.pct>0?d.pct+'%':'…')+'</span>';
   var tu=tileThumb(pr,it);
   return (pr.p==='x'?'<img src="'+esc(tu)+'" alt="" loading="lazy" onerror="this.classList.add(\'gone\')">':'<img '+(thumbs[tu]?'src="'+thumbs[tu]+'"':'data-src="'+esc(tu)+'"')+' alt="">')+
     (it.m.kind==='video'?'<span class="du">'+(it.m.gif?'GIF':tm(it.m.dur))+'</span>':'')+
-    (d?'':'<span class="ck'+(s?' on':'')+'" data-act="tsel" data-tile="'+it.key+'" role="checkbox" aria-checked="'+(!!s)+'" aria-label="Auswählen">'+(s?ic('check'):'')+'</span>')+st;
+    (d||it.locked?'':'<span class="ck'+(s?' on':'')+'" data-act="tsel" data-tile="'+it.key+'" role="checkbox" aria-checked="'+(!!s)+'" aria-label="Auswählen">'+(s?ic('check'):'')+'</span>')+st;
 }
 function profTile(k){
   var el=document.querySelector('.tile[data-tile="'+k+'"]');if(!el||!cur||cur.kind!=='profile')return;
@@ -1076,15 +1408,16 @@ function profBarHtml(pr){
 }
 function renderProfile(pr){
   var u=pr.user,vis=profVisible(pr);
-  var h='<div class="box"><div class="tw">'+(u.avatar?(pr.p==='x'?'<img src="'+esc(u.avatar)+'" alt="">':'<img data-src="'+esc(u.avatar)+'" alt="">'):'<span class="pf">'+PLAT[pr.p]+'</span>')+
-    '<div class="tx"><b>'+esc(u.name)+'</b><small>@'+esc(u.handle)+(u.count?' · '+u.count+' Medien':'')+'</small></div>'+
+  var h='<div class="box"><div class="tw">'+(u.avatar?(pr.p==='x'?'<img src="'+esc(u.avatar)+'" alt="">':'<img data-src="'+esc(u.avatar)+'" alt="">'):'<span class="pf">'+(pr.p==='tgpriv'||pr.p==='telegram'?'TG':PLAT[pr.p])+'</span>')+
+    '<div class="tx"><b>'+esc(u.name)+'</b><small>'+(u.handle?'@'+esc(u.handle):PLAT[pr.p])+(u.count?' · '+u.count+' Medien':'')+'</small></div>'+
     '<button class="ib" data-act="clear" aria-label="Schließen">'+ic('x')+'</button></div>'+
     '<div class="chips"><button class="chip" data-act="ponly" data-k="video" aria-pressed="'+(pr.only==='video')+'">Nur Videos</button><button class="chip" data-act="ponly" data-k="all" aria-pressed="'+(pr.only==='all')+'">Videos und Bilder</button></div>'+
-    '<small class="hint">Antippen = Vorschau (im Player nach oben wischen = nächstes Video). Kreis oben rechts = auswählen. Qualität: '+(set.q==='best'?'beste':set.q==='small'?'kleinste':'bis 720p')+' (Einstellungen).</small></div>';
+    '<small class="hint">'+(pr.p==='tgpriv'?'Antippen = Vorschaubild ansehen. Kreis oben rechts = auswählen.':'Antippen = Vorschau (im Player nach oben wischen = nächstes Video). Kreis oben rechts = auswählen. Qualität: '+(set.q==='best'?'beste':set.q==='small'?'kleinste':'bis 720p')+' (Einstellungen).')+'</small></div>';
   if(u.prot&&!vis.length&&pr.done)h+='<div class="err">Das Profil ist geschützt. Du siehst die Videos nur, wenn du dem Konto folgst.</div>';
   if(vis.length){
     h+=profBarHtml(pr)+'<div class="grid">'+vis.map(function(it){return '<div class="tile'+(pr.sel[it.key]?' on':'')+'" data-act="tprev" data-tile="'+it.key+'" role="button" aria-label="'+(it.m.kind==='video'?'Video ansehen':'Bild ansehen')+'">'+tileInner(pr,it)+'</div>';}).join('')+'</div>';
   }else if(pr.done&&!pr.loading&&!pr.err)h+='<div class="empty"><b>Keine '+(pr.only==='video'?'Videos':'Medien')+' gefunden</b></div>';
+  if(pr.locked)h+='<div class="err">'+esc(TGLOCK)+'</div>';
   if(pr.p==='telegram'&&pr.big)h+='<p class="note">'+pr.big+' Video'+(pr.big>1?'s sind':' ist')+' zu groß für die öffentliche Telegram-Ansicht und fehlen hier. Die gibt es nur in der Telegram-App.</p>';
   if(pr.err)h+='<div class="err">'+esc(pr.err)+'</div>';
   if(pr.loading)h+='<div class="note" style="text-align:center"><span class="spin"></span> Lade Beiträge …</div>';
@@ -1096,6 +1429,7 @@ function renderProfile(pr){
 /* ================= Vorschau ================= */
 function bigThumb(u){return /pbs\.twimg\.com\/media\//.test(u||'')?String(u).split('?')[0]+'?name=large':u;}
 async function previewMedia(m,v,title,onLoad,headers){
+  if(v&&v.tg){return tgPreview(m,onLoad);}
   var kind=v.kind||m.kind;
   if(kind==='image'){
     openSheet('<h3>Vorschau</h3><div class="pimg"><span class="spin"></span></div>'+
@@ -1142,7 +1476,12 @@ async function lookup(text,fromShare){
       return;
     }
     var tw;
-    switch(d.p){
+    if(d.p==='telegram'&&tgIsPriv(d.url)){
+      if(!tgStore().session)throw new Error('LOGIN:telegram');
+      var tr=await tgPrivate(d.url);
+      if(tr.kind==='profile'){cur=tr;busy=false;render();await xProfileMore();for(var t3=0;t3<3;t3++){if(cur&&cur.kind==='profile'&&profVisible(cur).length<9&&!cur.done&&!cur.err)await xProfileMore();}return;}
+      tw=tr;
+    }else switch(d.p){
       case 'x':tw=await getX(d.id);break;
       case 'tiktok':tw=await getTikTok(d.url);break;
       case 'instagram':tw=await getInstagram(d.url);break;
@@ -1160,6 +1499,7 @@ async function lookup(text,fromShare){
   }catch(e){
     var m=errText(e);
     if(/^LOGIN:/.test(m)){needLogin=m.slice(6);lastErr='';}
+    else if(e&&e.errorMessage)lastErr=tgErr(e);
     else lastErr=m;
   }
   busy=false;render();
@@ -1187,7 +1527,8 @@ async function dl(i){
     if(v.audio)opt.audio=v.audio;
     var h=v.headers||m.headers;if(h)opt.headers=h;
     if(v.cookies)opt.cookies=true;
-    var r=await L.download(opt);
+    if(m.locked)throw new Error(TGLOCK);
+    var r=v.tg?await tgDownload(v.tg,k,name,kind,v.ext||'mp4'):await L.download(opt);
     cur.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size,kind:kind};
     var th=await smallThumb(m.thumb,m.headers);
     hist.unshift({t:Date.now(),p:tw.p,uri:r.uri,mime:r.mime,size:r.size,thumb:th,kind:kind,q:v.label,name:tw.name,handle:tw.handle,text:tw.text,link:tw.link});
@@ -1208,6 +1549,7 @@ function thumbKey(u){return String(u||'');}
 async function thumbData(u,h){
   if(!u)return '';
   if(/^data:/.test(u))return u;
+  if(/^tgthumb:/.test(u))return await tgThumb(u.slice(8),false);
   if(thumbs[u])return thumbs[u];
   try{var o={url:u};if(h)o.headers=h;var r=await L.image(o);thumbs[u]=r.data;return r.data;}catch(e){return '';}
 }
@@ -1246,12 +1588,12 @@ function renderLoad(){
     '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen" value="'+esc(val)+'" aria-label="Link zum Beitrag">'+
     '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
     '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button>'+
-    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>andere Seiten</span></div></div>';
+    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>andere Seiten</span></div>'+(logins.telegram?'<button class="btn wide" data-act="tgchats">'+ic('list')+'Meine Telegram-Chats</button>':'')+'</div>';
 
   if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
   if(needLogin){
-    var nm=needLogin==='facebook'?'Facebook':needLogin==='x'?'X':'Instagram';
-    h+='<div class="box"><b>Bei '+nm+' anmelden</b><p class="hint">'+nm+(needLogin==='x'||/instagram\.com\/[^\/]+\/?(\?|$)/.test(($('#url')||{}).value||'')?' zeigt die Videos eines Profils nur angemeldet.':' zeigt diesen Beitrag nur angemeldet.')+' Melde dich einmal in Fox Loader an, danach klappt es. Dein Passwort gibst du direkt bei '+nm+' ein, Fox Loader speichert es nicht.</p>'+
+    var nm=needLogin==='facebook'?'Facebook':needLogin==='x'?'X':needLogin==='telegram'?'Telegram':'Instagram';
+    h+='<div class="box"><b>Bei '+nm+' anmelden</b><p class="hint">'+nm+(needLogin==='telegram'?' gibt private Kanäle, Gruppen und Chats nur angemeldeten Nutzern heraus.':needLogin==='x'||/instagram\.com\/[^\/]+\/?(\?|$)/.test(($('#url')||{}).value||'')?' zeigt die Videos eines Profils nur angemeldet.':' zeigt diesen Beitrag nur angemeldet.')+' Melde dich einmal in Fox Loader an, danach klappt es. Dein Passwort gibst du direkt bei '+nm+' ein, Fox Loader speichert es nicht.</p>'+
       '<button class="btn pri wide" data-act="login" data-k="'+needLogin+'">Bei '+nm+' anmelden</button></div>';
   }
 
@@ -1325,7 +1667,7 @@ function openSheet(html){var s=$('#sheet');s.innerHTML='<div class="grip"></div>
 function closeSheet(){$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
 $('#scrim').addEventListener('click',closeSheet);
 async function loadVer(){var P=plug('Updater');if(!P||appVer)return;try{var i=await P.info();appVer={code:Number(i.versionCode),name:String(i.versionName||'')};}catch(e){}}
-async function refreshLogins(){if(!L)return;try{logins=await L.logins();}catch(e){}}
+async function refreshLogins(){if(!L)return;try{logins=await L.logins();}catch(e){}logins.telegram=!!(tgStore().session);}
 function accRow(site,nm){
   var on=logins[site];
   return '<div class="srow line"><div><b>'+nm+'</b><br><small>'+(on?'Angemeldet':'Nicht angemeldet')+'</small></div>'+
@@ -1338,7 +1680,7 @@ async function settingsSheet(){
     '<div class="srow"><b>Qualität vorauswählen</b><div class="chips">'+q('best','Beste')+q('mid','Bis 720p')+q('small','Kleinste')+'</div><small>Du kannst sie bei jedem Video noch ändern.</small></div>'+
     '<div class="srow line"><div><b>Beim Teilen sofort laden</b><br><small>Teilen an Fox Loader speichert direkt</small></div><input type="checkbox" class="sw" id="shareDl"'+(set.shareDl?' checked':'')+' aria-label="Beim Teilen sofort laden"></div>'+
     '<div class="srow line"><div><b>Kopierten Link erkennen</b><br><small>Beim Öffnen schaut Fox Loader in die Zwischenablage</small></div><input type="checkbox" class="sw" id="autoClip"'+(set.autoClip?' checked':'')+' aria-label="Kopierten Link erkennen"></div>'+
-    '<p class="lbl" style="margin:6px 0 0">Konten</p>'+accRow('x','X')+accRow('instagram','Instagram')+accRow('facebook','Facebook')+
+    '<p class="lbl" style="margin:6px 0 0">Konten</p>'+accRow('x','X')+accRow('instagram','Instagram')+accRow('facebook','Facebook')+accRow('telegram','Telegram')+
     '<small class="hint">Nur nötig für Profile und Beiträge, die man ohne Anmeldung nicht sieht. Das Passwort gibst du direkt bei X, Instagram oder Facebook ein, Fox Loader speichert es nicht. Tipp: lieber ein Zweitkonto nehmen.</small>'+
     (isNative()?'<button class="srow" style="border:0;text-align:left" data-act="upd"><b>App-Update</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Tippen zum Prüfen'+(upd?' · Neu: '+upd.ver:'')+'</small></button>'+
     '<div class="srow line"><div><b>Updates automatisch suchen</b><br><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" id="autoUpd"'+(set.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen"></div>':'')+
@@ -1392,13 +1734,13 @@ async function doUpdate(){
 }
 
 /* ================= Eingaben ================= */
-document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.id==='url'){e.preventDefault();e.target.blur();lookup(e.target.value);}});
+document.addEventListener('keydown',function(e){if(e.key==='Enter'&&/^tg(id|hash|phone|code|pw)$/.test(e.target.id||'')){e.preventDefault();tgAct({tgid:'tgapi',tghash:'tgapi',tgphone:'tgphone',tgcode:'tgcode',tgpw:'tgpw'}[e.target.id]);return;}if(e.key==='Enter'&&e.target.id==='url'){e.preventDefault();e.target.blur();lookup(e.target.value);}});
 document.addEventListener('click',async function(e){
   var b=e.target.closest('[data-act]');if(!b)return;
   var a=b.dataset.act, i=b.dataset.i!=null?+b.dataset.i:-1;
   switch(a){
     case 'settings':settingsSheet();break;
-    case 'close':closeSheet();break;
+    case 'close':if(tgL.step==='busy'||tgL.qrLink){tgL.qrStop=true;}closeSheet();break;
     case 'tab-load':go('load');break;
     case 'go':{var u=$('#url');if(u)u.blur();lookup(u?u.value:'');break;}
     case 'paste':{
@@ -1411,18 +1753,19 @@ document.addEventListener('click',async function(e){
     case 'q':cur.sel[i]=+b.dataset.j;renderLoad();break;
     case 'dl':dl(i);break;
     case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(m.kind!=='audio'&&(!d||d.state==='err'))dl(j);});break;
-    case 'stop':try{await L.cancel({id:b.dataset.k});}catch(x){}break;
+    case 'stop':tgCancel[b.dataset.k]=1;try{await L.cancel({id:b.dataset.k});}catch(x){}break;
     case 'play':L.play({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(){toast('Datei nicht gefunden. Wurde sie in der Galerie gelöscht?');});break;
     case 'share':L.share({uri:b.dataset.uri,mime:b.dataset.mime||'video/mp4'}).catch(function(err){toast(errText(err));});break;
     case 'post':L.openUrl({url:hist[i].link}).catch(function(){toast('Link lässt sich nicht öffnen.');});break;
     case 'login':{
       var site=b.dataset.k,wasErr=needLogin===site;closeSheet();
+      if(site==='telegram'){tgLoginSheet();break;}
       try{var lr=await L.login({site:site});await refreshLogins();
         if(lr.ok){toast('Angemeldet bei '+(site==='facebook'?'Facebook':site==='x'?'X':'Instagram')+'.');if(wasErr){var u4=$('#url');lookup(u4?u4.value:'');}}
         else toast('Nicht angemeldet. Melde dich im Fenster an und tippe dann auf „Fertig“.',6000);
       }catch(x){toast(errText(x));}
       break;}
-    case 'logout':{var s2=b.dataset.k;try{await L.logout({site:s2});}catch(x){}await refreshLogins();toast('Abgemeldet.');settingsSheet();break;}
+    case 'logout':{var s2=b.dataset.k;if(s2==='telegram'){await tgLogout();}else try{await L.logout({site:s2});}catch(x){}await refreshLogins();toast('Abgemeldet.');settingsSheet();break;}
     case 'del':openSheet('<h3>Download löschen?</h3><div class="srow"><small style="color:var(--fg)">Du kannst ihn nur aus der Liste nehmen oder auch die Datei auf dem Handy löschen.</small></div>'+
       '<button class="btn pri wide" data-act="delfile" data-i="'+i+'">'+ic('trash')+'Auch die Datei löschen</button><button class="btn wide" data-act="dellist" data-i="'+i+'">Nur aus der Liste</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
     case 'delfile':closeSheet();try{await L.remove({uri:hist[i].uri});}catch(x){toast('Datei ließ sich nicht löschen, sie ist nur aus der Liste raus.');}hist.splice(i,1);saveHist();renderList();break;
@@ -1430,7 +1773,8 @@ document.addEventListener('click',async function(e){
     case 'clearhist':openSheet('<h3>Liste leeren?</h3><div class="srow"><small style="color:var(--fg)">Die Dateien bleiben auf deinem Handy.</small></div><button class="btn pri wide" data-act="clearyes">Ja, Liste leeren</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
     case 'clearyes':closeSheet();hist=[];saveHist();renderList();break;
     case 'setq':set.q=b.dataset.k;saveSet();Array.prototype.forEach.call(b.parentNode.children,function(c){c.setAttribute('aria-pressed',String(c===b));});break;
-    case 'tsel':{if(!cur||cur.kind!=='profile')break;var tk=b.dataset.tile,td=cur.dl[tk];if(td&&(td.state==='done'||td.state==='run'||td.state==='wait'))break;
+    case 'tsel':{if(!cur||cur.kind!=='profile')break;var tk=b.dataset.tile,td=cur.dl[tk];
+      if(cur.items.some(function(x){return x.key===tk&&x.locked;})){toast(TGLOCK,7000);break;}if(td&&(td.state==='done'||td.state==='run'||td.state==='wait'))break;
       if(cur.sel[tk])delete cur.sel[tk];else cur.sel[tk]=1;profTile(tk);profBar();break;}
     case 'tprev':{if(!cur||cur.kind!=='profile')break;var pk=b.dataset.tile,pd=cur.dl[pk];
       if(pd&&pd.state==='done'){L.play({uri:pd.uri,mime:pd.mime}).catch(function(){toast('Datei nicht gefunden.');});break;}
@@ -1438,12 +1782,14 @@ document.addEventListener('click',async function(e){
       var pr0=cur;
       function ptitle(x){return '@'+pr0.user.handle+(x.text?' · '+x.text.replace(/\s*https:\/\/t\.co\/\w+\s*$/,''):'');}
       if(pit.m.kind==='image'){previewMedia(pit.m,pit.m.variants[0],ptitle(pit),function(){if(cur===pr0)profQueue([pk],true);});break;}
+      if(pit.m.variants[0].tg){pit.m.locked=pit.locked;tgPreview(pit.m,function(){if(cur===pr0)profQueue([pk],true);});break;}
       var vids=profVisible(pr0).filter(function(x){return x.m.kind==='video';});
       var st0=vids.indexOf(pit);
       previewList(vids.map(function(x){var dd=pr0.dl[x.key];return {m:x.m,v:x.m.variants[pickQ(x.m.variants)],title:ptitle(x),done:!!(dd&&dd.state!=='err'),onLoad:function(){if(cur===pr0)profQueue([x.key],true);}};}),Math.max(0,st0));
       break;}
     case 'pv':{if(!cur||!cur.tw)break;var pm=cur.tw.media[i];if(!pm)break;var pi=i,tw0=cur;
       var ttl=(cur.tw.name||PLAT[cur.tw.p]||'')+(cur.tw.text?' · '+cur.tw.text:'');
+      if(pm.variants[0].tg){tgPreview(pm,function(){dl(pi);});break;}
       if(pm.kind==='image'){previewMedia(pm,pm.variants[cur.sel[i]||0],ttl,function(){dl(pi);});break;}
       var lst=[],st1=0;
       cur.tw.media.forEach(function(mm,j){if(mm.kind==='image')return;if(j===pi)st1=lst.length;var dd=tw0.dl[tw0.tw.id+'-'+j];
@@ -1451,12 +1797,23 @@ document.addEventListener('click',async function(e){
       previewList(lst,st1);
       break;}
     case 'pvload':closeSheet();if(pvCb){var cb=pvCb;pvCb=null;cb();}break;
-    case 'pall':profVisible(cur).forEach(function(x){var d=cur.dl[x.key];if(!d||d.state==='err')cur.sel[x.key]=1;});renderLoad();break;
+    case 'pall':{var nl=0;profVisible(cur).forEach(function(x){if(x.locked){nl++;return;}var d=cur.dl[x.key];if(!d||d.state==='err')cur.sel[x.key]=1;});if(nl)toast(nl+' gesperrte Videos ausgelassen. '+TGLOCK,7000);renderLoad();break;}
     case 'pnone':cur.sel={};renderLoad();break;
     case 'pdl':profQueue(Object.keys(cur.sel));break;
-    case 'pstop':pq.forEach(function(k){cur.dl[k]=null;});pq=[];Object.keys(cur.dl).forEach(function(k){var d=cur.dl[k];if(d&&d.state==='run')L.cancel({id:k}).catch(function(){});});renderLoad();break;
+    case 'pstop':pq.forEach(function(k){cur.dl[k]=null;});pq=[];Object.keys(cur.dl).forEach(function(k){var d=cur.dl[k];if(d&&d.state==='run'){tgCancel[k]=1;L.cancel({id:k}).catch(function(){});}});renderLoad();break;
     case 'pmore':xProfileMore();break;
     case 'ponly':cur.only=b.dataset.k;renderLoad();break;
+    case 'tgweb':L.openUrl({url:'https://my.telegram.org/apps'}).catch(function(){});break;
+    case 'tgapi':case 'tgkey':case 'tgphone':case 'tgcode':case 'tgpw':tgAct(a);break;
+    case 'tgchats':tgChats();break;
+    case 'tgqr':tgQrLogin();break;
+    case 'tgqrcancel':tgQrCancel();break;
+    case 'tgqrapp':L.openUrl({url:tgL.qrLink}).catch(function(){toast('Telegram-App nicht gefunden. Scanne den Code mit einem zweiten Gerät.',6000);});break;
+    case 'tgphoneway':tgL.qrStop=true;if(tgL.c){tgL.c.disconnect().catch(function(){});tgL.c=null;}tgSheet('phone');break;
+    case 'tgopen':{var dd=tgDialogs[i];if(!dd)break;closeSheet();if(igPr){igPr=null;L.grabStop().catch(function(){});}
+      lastErr='';needLogin='';cur=tgProfileFor(dd.entity,dd.title||dd.name);go('load');await xProfileMore();
+      for(var tt=0;tt<3;tt++){if(cur&&cur.kind==='profile'&&profVisible(cur).length<9&&!cur.done&&!cur.err)await xProfileMore();}
+      break;}
     case 'upd':closeSheet();checkUpdate(true);break;
     case 'updgo':doUpdate();break;
   }

@@ -1,0 +1,5 @@
+{
+  "name": "fox-loader-telegram-bundle",
+  "private": true,
+  "dependencies": { "buffer": "^6.0.3", "esbuild": "^0.24.0", "qrcode-generator": "^1.4.4", "telegram": "2.26.22" }
+}

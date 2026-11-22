@@ -1174,6 +1174,108 @@ public class LoaderPlugin extends Plugin {
         }).start();
     }
 
+    // ---------------- Datei stueckweise schreiben (fuer Telegram: Daten kommen aus der App-Seite) ----------------
+
+    private final HashMap<String, Saved> parts = new HashMap<>();
+    private final HashMap<String, String[]> partInfo = new HashMap<>();
+    private final HashMap<String, long[]> partSize = new HashMap<>();
+
+    @PluginMethod
+    public void fileOpen(PluginCall call) {
+        String id = call.getString("id", "x");
+        String kind = call.getString("kind", "video");
+        String ext = call.getString("ext", "mp4").toLowerCase();
+        String name = clean(call.getString("name", "fox"));
+        if (Build.VERSION.SDK_INT < 29
+                && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            if (getActivity() != null) {
+                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 4711);
+            }
+            call.reject("storage");
+            return;
+        }
+        try {
+            String mime = mimeOf(ext);
+            Saved sv = newFile(kind, name + "." + ext, mime, name, ext);
+            synchronized (parts) {
+                parts.put(id, sv);
+                partInfo.put(id, new String[]{mime, name + "." + ext});
+                partSize.put(id, new long[]{0});
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void fileWrite(PluginCall call) {
+        String id = call.getString("id", "x");
+        Saved sv;
+        long[] sz;
+        synchronized (parts) {
+            sv = parts.get(id);
+            sz = partSize.get(id);
+        }
+        if (sv == null) {
+            call.reject("Datei nicht offen");
+            return;
+        }
+        try {
+            byte[] b = Base64.decode(call.getString("data", ""), Base64.DEFAULT);
+            sv.out.write(b);
+            sz[0] += b.length;
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void fileClose(PluginCall call) {
+        String id = call.getString("id", "x");
+        Saved sv;
+        String[] info;
+        long[] sz;
+        synchronized (parts) {
+            sv = parts.remove(id);
+            info = partInfo.remove(id);
+            sz = partSize.remove(id);
+        }
+        if (sv == null) {
+            call.reject("Datei nicht offen");
+            return;
+        }
+        try {
+            sv.out.close();
+            String uri = finish(sv, info[0]);
+            JSObject o = new JSObject();
+            o.put("uri", uri);
+            o.put("mime", info[0]);
+            o.put("file", info[1]);
+            o.put("size", sz[0]);
+            call.resolve(o);
+        } catch (Exception e) {
+            sv.abort(getContext().getContentResolver());
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void fileAbort(PluginCall call) {
+        String id = call.getString("id", "x");
+        Saved sv;
+        synchronized (parts) {
+            sv = parts.remove(id);
+            partInfo.remove(id);
+            partSize.remove(id);
+        }
+        if (sv != null) {
+            sv.abort(getContext().getContentResolver());
+        }
+        call.resolve();
+    }
+
     private static String mimeOf(String ext) {
         switch (ext) {
             case "png":
