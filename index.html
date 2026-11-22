@@ -825,8 +825,30 @@ async function getIgProfile(name){
   }catch(e){why.push('C '+errText(e).slice(0,40));}
   throw new Error('Profil @'+name+' nicht gefunden. Prüfe, ob der Name stimmt und ob das Profil in der Instagram-App aufgeht. (Instagram: '+why.join(' · ')+')');
 }
+var IGAPP={'User-Agent':'Instagram 361.0.0.46.88 Android (34/14; 420dpi; 1080x2340; Google; Pixel 8; shiba; shiba; de_DE; 674675155)','X-IG-App-ID':'567067343352427','X-IG-Capabilities':'3brTv10=','X-IG-Connection-Type':'WIFI','Accept-Language':'de-DE'};
+async function igFeed(pr){
+  var mx=pr.cursor?'&max_id='+encodeURIComponent(pr.cursor):'';
+  var ways=[
+    {n:'W1',f:function(){return igRaw('https://www.instagram.com/api/v1/feed/user/'+encodeURIComponent(pr.user.handle)+'/username/?count=12'+mx);}},
+    {n:'W2',f:function(){return igRaw('https://www.instagram.com/api/v1/feed/user/'+pr.user.id+'/?count=12'+mx);}},
+    {n:'W3',f:function(){return get('https://i.instagram.com/api/v1/feed/user/'+pr.user.id+'/?count=12'+mx,{headers:IGAPP,cookies:true});}}
+  ];
+  if(pr.way!=null){var w0=ways.splice(pr.way,1)[0];ways.unshift(w0);}
+  var why=[],r=null;
+  for(var i=0;i<ways.length;i++){
+    try{
+      r=await ways[i].f();
+      if(r.status===200){var j=JSON.parse(r.body);if(j&&(j.items||j.status==='ok')){pr.way=['W1','W2','W3'].indexOf(ways[i].n);return j;}}
+      why.push(ways[i].n+' '+igWhy(r).slice(0,30));
+      if(r.status===429)break;
+    }catch(e){why.push(ways[i].n+' '+errText(e).slice(0,30));}
+  }
+  if(r&&r.status===429)throw new Error('Instagram bremst dein Konto gerade (429). Öffne kurz die Instagram-App, scroll ein bisschen und versuch es in 15 bis 30 Minuten nochmal.');
+  if(r&&(r.status===401||r.status===403)){await refreshLogins();if(!logins.instagram)throw new Error('LOGIN:instagram');}
+  throw new Error('Instagram gibt die Beiträge nicht heraus. Melde dich unter Einstellungen › Konten bei Instagram ab und wieder an und versuch es nochmal. ('+why.join(' · ')+')');
+}
 async function igProfilePage(pr){
-  var j=await igGet('https://www.instagram.com/api/v1/feed/user/'+pr.user.id+'/?count=33'+(pr.cursor?'&max_id='+encodeURIComponent(pr.cursor):''));
+  var j=await igFeed(pr);
   var added=0;
   (j.items||[]).forEach(function(it){
     var r=igV1(it),pk=String(it.pk||it.id||it.code);
