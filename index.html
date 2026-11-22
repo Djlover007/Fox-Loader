@@ -775,9 +775,9 @@ function tgSheet(step,msg){
     '<input type="text" id="tghash" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="api_hash (32 Zeichen)" value="'+esc(st.apiHash||'')+'">'+
     '<button class="btn pri wide" data-act="tgapi">Weiter</button>'+cancel);
   else if(step==='phone')openSheet('<h3>Bei Telegram anmelden</h3>'+e+
-    '<div class="srow"><small>Deine Telefonnummer mit Ländervorwahl, z. B. +49 171 1234567. Telegram schickt dir dann einen Code.</small></div>'+
+    '<div class="srow"><small>Deine Telefonnummer mit Ländervorwahl, z. B. +49 171 1234567. Telegram schickt dir dann einen Code in den Chat „Telegram“.</small></div>'+
     '<input type="tel" id="tgphone" autocomplete="tel" placeholder="+49 …" value="'+esc(tgL.phone||'')+'">'+
-    '<button class="btn pri wide" data-act="tgphone">Code anfordern</button><button class="btn wide" data-act="tgqr">Mit QR-Code anmelden</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
+    '<button class="btn pri wide" data-act="tgphone">Code anfordern</button><button class="btn wide" data-act="tgqr">Mit QR-Code (zweites Gerät)</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
   else if(step==='code')openSheet('<h3>Code eingeben</h3>'+e+
     '<div class="srow"><small>Telegram hat dir einen Code '+(tgL.viaApp?'in der Telegram-App (Chat „Telegram“)':'per SMS')+' geschickt.</small></div>'+
     '<input type="text" id="tgcode" inputmode="numeric" autocomplete="one-time-code" placeholder="Code">'+
@@ -789,7 +789,7 @@ function tgSheet(step,msg){
   else if(step==='qrerr')openSheet('<h3>Telegram</h3>'+e+'<button class="btn pri wide" data-act="tgqr">Nochmal versuchen</button><button class="btn wide" data-act="tgphoneway">Mit Telefonnummer anmelden</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
   else if(step==='busy')openSheet('<h3>Telegram</h3><div class="srow"><span><span class="spin"></span> '+esc(msg||'Bitte warten …')+'</span></div>');
 }
-function tgLoginSheet(){var st=tgStore();if(st.apiId&&st.apiHash)tgQrLogin();else{tgL.afterApi='qr';tgSheet('api');}}
+function tgLoginSheet(){var st=tgStore();if(st.apiId&&st.apiHash)tgSheet('phone');else{tgL.afterApi='phone';tgSheet('api');}}
 async function tgAct(a){
   var st=tgStore(),v;
   try{
@@ -798,7 +798,7 @@ async function tgAct(a){
       if(!/^\d{3,12}$/.test(id))return tgSheet('api','api_id besteht nur aus Zahlen.');
       if(!/^[a-f0-9]{32}$/i.test(hs))return tgSheet('api','api_hash hat genau 32 Zeichen (Zahlen und a bis f).');
       st.apiId=id;st.apiHash=hs;tgSave(st);if(tgL.afterApi==='phone')tgSheet('phone');else tgQrLogin();
-    }else if(a==='tgkey'){tgL.afterApi='qr';tgSheet('api');}
+    }else if(a==='tgkey'){tgL.afterApi='phone';tgSheet('api');}
     else if(a==='tgphone'){
       v=($('#tgphone').value||'').replace(/[\s()\/-]/g,'');
       if(/^00/.test(v))v='+'+v.slice(2);if(/^0/.test(v))v='+49'+v.slice(1);
@@ -971,10 +971,8 @@ function tgQrShow(token){
   var q=FoxTG.qrcode(0,'M');q.addData(link);q.make();
   var svg=q.createSvgTag({cellSize:6,margin:3,scalable:true});
   openSheet('<h3>Mit Telegram anmelden</h3>'+
-    '<button class="btn pri wide" data-act="tgqrapp">In Telegram bestätigen (dieses Handy)</button>'+
-    '<small class="hint">Telegram öffnet sich und fragt, ob du dich anmelden willst. Tippe dort auf „Bestätigen“ und komm zurück zu Fox Loader.</small>'+
+    '<small class="hint">Scanne den Code mit Telegram auf einem zweiten Gerät (PC, Tablet, anderes Handy): Einstellungen › Geräte › Gerät verbinden. Mit demselben Handy geht das nicht. Der Code erneuert sich alle 30 Sekunden.</small>'+
     '<div class="qrbox">'+svg+'</div>'+
-    '<small class="hint">Oder mit einem zweiten Gerät scannen: Telegram › Einstellungen › Geräte › Gerät verbinden. Der Code erneuert sich alle 30 Sekunden.</small>'+
     '<button class="btn wide" data-act="tgphoneway">Stattdessen mit Telefonnummer</button>'+
     '<button class="btn wide" data-act="tgqrcancel">Abbrechen</button>');
 }
