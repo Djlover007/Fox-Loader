@@ -1021,7 +1021,7 @@ public class LoaderPlugin extends Plugin {
                     break;
                 }
                 if (code != 200 && code != 206) {
-                    throw new Exception("Server antwortet mit " + code);
+                    throw new Exception("Server antwortet mit " + code + (got > 0 ? " (nach " + (got / 1048576) + " MB)" : ""));
                 }
                 if (total < 0) {
                     String cr = c.getHeaderField("Content-Range");

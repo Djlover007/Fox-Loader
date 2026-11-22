@@ -292,7 +292,7 @@ if(L){try{L.addListener('progress',window.__foxProg=function(e){
   if(c)c.textContent=phaseText(e.phase);
   var tp=document.getElementById('tp-'+k);if(tp)tp.textContent=(e.pct>=0?e.pct+'%':mb(e.got));
 });}catch(x){}}
-function phaseText(p){return p==='mp3'?'Wird in MP3 umgewandelt …':p==='audio'?'Ton wird geladen …':p==='mux'?'Bild und Ton werden zusammengefügt …':'Wird geladen …';}
+function phaseText(p){return p==='retry'?'YouTube hat abgelehnt, versuche anderen Weg …':p==='mp3'?'Wird in MP3 umgewandelt …':p==='audio'?'Ton wird geladen …':p==='mux'?'Bild und Ton werden zusammengefügt …':'Wird geladen …';}
 
 async function get(url,opt){return await L.get(Object.assign({url:url},opt||{}));}
 async function getJson(url,opt){
@@ -621,16 +621,20 @@ async function ytVisitorData(){
   return ytVisitor;
 }
 // prüft, ob YouTube die Download-Adresse wirklich herausgibt
-async function ytUrlOk(url,ua){
-  try{var r=await get(url,{headers:{'User-Agent':ua,'Range':'bytes=0-1'}});return r.status===200||r.status===206?'':String(r.status);}
-  catch(e){return 'Netz';}
+async function ytUrlOk(url,ua,len){
+  async function at(a){try{var r=await get(url,{headers:{'User-Agent':ua,'Range':'bytes='+a+'-'+(a+1)}});return r.status===200||r.status===206?'':String(r.status);}catch(e){return 'Netz';}}
+  var b=await at(0);if(b)return b;
+  len=+len||0;
+  if(len>3000000){b=await at(Math.floor(len*0.7));if(b)return b+' (Mitte)';}
+  return '';
 }
 function ytId(u){var m=String(u).match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([\w-]{11})/);return m?m[1]:null;}
-async function getYouTube(url){
+async function getYouTube(url,skip){
+  skip=skip||0;
   var id=ytId(url);if(!id)throw new Error('Das ist kein Link zu einem YouTube-Video.');
   var lastWhy='';
   var vis=await ytVisitorData(),tried=[];
-  for(var i=0;i<YTC.length;i++){
+  for(var i=skip;i<YTC.length;i++){
     var c=YTC[i];
     try{
       var cl=Object.assign({clientName:c.name,clientVersion:c.ver,hl:'de',gl:'DE'},c.extra);if(vis)cl.visitorData=vis;
@@ -652,14 +656,14 @@ async function getYouTube(url){
         if(!vs.some(function(v){return v.label===l;}))vs.push({url:f.url,label:l,size:+f.contentLength||0,chunked:true});
       });
       if(!vs.length){lastWhy='keine ladbaren Formate';tried.push(c.name+' '+c.ver+': keine Formate');continue;}
-      var bad=await ytUrlOk((au||vs[0]).url,c.ua);
-      if(!bad&&au)bad=await ytUrlOk(vs[0].url,c.ua);
+      var bad=au?await ytUrlOk(au.url,c.ua,au.contentLength):'';
+      if(!bad){var v0=vids.filter(function(f){return f.url===vs[0].url;})[0]||(sd.formats||[]).filter(function(f){return f.url===vs[0].url;})[0]||{};bad=await ytUrlOk(vs[0].url,c.ua,v0.contentLength);}
       if(bad){lastWhy='Download-Adresse abgelehnt ('+bad+')';tried.push(c.name+' '+c.ver+': '+bad);continue;}
       vs.sort(function(a,b){return (parseInt(b.label)||0)-(parseInt(a.label)||0);});
       var vd=j.videoDetails||{},th='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';
       var media=[{kind:'video',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:vs}];
       if(au)media.push({kind:'audio',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:[{url:au.url,label:'MP3',ext:'mp3',mp3:true,chunked:true},{url:au.url,label:'M4A',ext:'m4a',size:+au.contentLength||0,chunked:true}]});
-      return {id:id,text:vd.title||'',name:vd.author||'YouTube',handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id};
+      return {id:id,text:vd.title||'',name:vd.author||'YouTube',handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id,ytClient:i,ytUrl:url};
     }catch(e){lastWhy=errText(e);tried.push(c.name+' '+c.ver+': '+lastWhy.slice(0,40));}
   }
   throw new Error('YouTube gibt das Video gerade nicht heraus. YouTube ändert das oft, ein App-Update hilft meistens. ('+(tried.length?tried.join(' · '):lastWhy).slice(0,300)+')');
@@ -1581,7 +1585,20 @@ async function dl(i){
     var h=v.headers||m.headers;if(h)opt.headers=h;
     if(v.cookies)opt.cookies=true;
     if(m.locked)throw new Error(TGLOCK);
-    var r=v.tg?await tgDownload(v.tg,k,name,kind,v.ext||'mp4'):v.mp3?await toMp3(k,v,name,h):await L.download(opt);
+    var r;
+    try{r=v.tg?await tgDownload(v.tg,k,name,kind,v.ext||'mp4'):v.mp3?await toMp3(k,v,name,h):await L.download(opt);}
+    catch(e1){
+      // YouTube: Adresse abgelehnt -> nächsten Abfrageweg holen und gleich nochmal
+      if(!(/403/.test(errText(e1))&&tw.p==='youtube'&&tw.ytUrl&&tw.ytClient!=null&&tw.ytClient<YTC.length-1))throw e1;
+      if(window.__foxProg)window.__foxProg({id:k,pct:-1,got:0,phase:'retry'});
+      var nt=await getYouTube(tw.ytUrl,tw.ytClient+1);
+      tw.ytClient=nt.ytClient;
+      var nm=nt.media.filter(function(x){return x.kind===m.kind;})[0];if(!nm)throw e1;
+      var nv=nm.variants.filter(function(x){return x.label===v.label;})[0]||nm.variants[Math.min(cur.sel[i]||0,nm.variants.length-1)];
+      tw.media[i]=nm;m=nm;v=nv;h=nm.headers;
+      opt.url=v.url;if(v.audio)opt.audio=v.audio;else delete opt.audio;opt.headers=h;
+      r=v.mp3?await toMp3(k,v,name,h):await L.download(opt);
+    }
     cur.dl[k]={state:'done',uri:r.uri,mime:r.mime,size:r.size,kind:kind};
     var th=await smallThumb(m.thumb,m.headers);
     hist.unshift({t:Date.now(),p:tw.p,uri:r.uri,mime:r.mime,size:r.size,thumb:th,kind:kind,q:v.label,name:tw.name,handle:tw.handle,text:tw.text,link:tw.link});
