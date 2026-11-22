@@ -116,6 +116,15 @@ if (bn) {
   g = g2;
   console.log('Version: ' + bn);
 }
+if (!g.includes('media3-exoplayer')) {
+  const g2 = g.replace(/^dependencies\s*\{\s*\n/m,
+    'dependencies {\n' +
+    "    implementation 'androidx.media3:media3-exoplayer:1.4.1'\n" +
+    "    implementation 'androidx.media3:media3-ui:1.4.1'\n");
+  if (g2 === g) fail('dependencies { } in build.gradle nicht gefunden');
+  g = g2;
+  console.log('Vorschau-Player eingetragen');
+}
 fs.writeFileSync(gradle, g);
 
 // ---- Fuchs-Icon ----

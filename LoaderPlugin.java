@@ -34,6 +34,16 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.MergingMediaSource;
+import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.ui.PlayerView;
+
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
@@ -55,6 +65,7 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -473,6 +484,138 @@ public class LoaderPlugin extends Plugin {
                     d.setContentView(root);
                     d.show();
                 } catch (Exception e) {
+                    call.reject(String.valueOf(e.getMessage()));
+                }
+            }
+        });
+    }
+
+    // ---------------- Vorschau (Video/Ton in der App abspielen, ohne zu speichern) ----------------
+
+    @SuppressLint("UnsafeOptInUsageError")
+    @PluginMethod
+    public void preview(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final String audio = call.getString("audio", null);
+        final String title = call.getString("title", "Vorschau");
+        final boolean canLoad = !Boolean.FALSE.equals(call.getBoolean("download", true));
+        final Req r = reqOf(call);
+        final Activity act = getActivity();
+        if (act == null || url == null || !url.startsWith("https://")) {
+            call.reject("Ungueltige Adresse");
+            return;
+        }
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final String[] action = {"close"};
+                    final Dialog d = new Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+                    LinearLayout root = new LinearLayout(act);
+                    root.setOrientation(LinearLayout.VERTICAL);
+                    root.setBackgroundColor(Color.BLACK);
+
+                    LinearLayout bar = new LinearLayout(act);
+                    bar.setOrientation(LinearLayout.HORIZONTAL);
+                    bar.setGravity(Gravity.CENTER_VERTICAL);
+                    bar.setPadding(dp(act, 6), dp(act, 8), dp(act, 10), dp(act, 8));
+                    Button close = new Button(act);
+                    close.setText("\u2715");
+                    close.setTextColor(Color.WHITE);
+                    close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+                    close.setBackgroundColor(Color.TRANSPARENT);
+                    bar.addView(close, new LinearLayout.LayoutParams(dp(act, 52), dp(act, 48)));
+                    TextView t = new TextView(act);
+                    t.setText(title);
+                    t.setTextColor(Color.WHITE);
+                    t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                    t.setMaxLines(2);
+                    t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    Button load = new Button(act);
+                    load.setText("\u2193 Laden");
+                    load.setAllCaps(false);
+                    load.setTextColor(Color.WHITE);
+                    load.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+                    load.setBackgroundColor(Color.rgb(232, 100, 12));
+                    load.setPadding(dp(act, 16), 0, dp(act, 16), 0);
+                    if (canLoad) {
+                        bar.addView(load, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(act, 44)));
+                    }
+                    root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                    HashMap<String, String> hdr = new HashMap<>();
+                    String ua = UA;
+                    Iterator<String> it = r.headers.keys();
+                    while (it.hasNext()) {
+                        String k = it.next();
+                        if ("User-Agent".equalsIgnoreCase(k)) {
+                            ua = r.headers.getString(k);
+                        } else {
+                            hdr.put(k, r.headers.getString(k));
+                        }
+                    }
+                    if (r.cookies) {
+                        String ck = webCookies(url);
+                        if (!ck.isEmpty()) {
+                            hdr.put("Cookie", ck);
+                        }
+                    }
+                    DefaultHttpDataSource.Factory hf = new DefaultHttpDataSource.Factory()
+                            .setUserAgent(ua)
+                            .setAllowCrossProtocolRedirects(true)
+                            .setConnectTimeoutMs(20000)
+                            .setReadTimeoutMs(30000)
+                            .setDefaultRequestProperties(hdr);
+                    ProgressiveMediaSource.Factory pf = new ProgressiveMediaSource.Factory(hf);
+                    MediaSource src = pf.createMediaSource(MediaItem.fromUri(url));
+                    if (audio != null && audio.startsWith("https://")) {
+                        src = new MergingMediaSource(src, pf.createMediaSource(MediaItem.fromUri(audio)));
+                    }
+                    final ExoPlayer player = new ExoPlayer.Builder(act).build();
+                    player.setMediaSource(src);
+                    player.setRepeatMode(Player.REPEAT_MODE_ONE);
+                    player.prepare();
+                    player.setPlayWhenReady(true);
+
+                    final PlayerView pv = new PlayerView(act);
+                    pv.setPlayer(player);
+                    pv.setKeepScreenOn(true);
+                    root.addView(pv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+                    final TextView err = new TextView(act);
+                    err.setTextColor(Color.rgb(255, 170, 150));
+                    err.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                    err.setPadding(dp(act, 16), dp(act, 8), dp(act, 16), dp(act, 16));
+                    err.setVisibility(android.view.View.GONE);
+                    root.addView(err, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    player.addListener(new Player.Listener() {
+                        @Override
+                        public void onPlayerError(PlaybackException e) {
+                            err.setText("Vorschau geht hier nicht (" + e.getErrorCodeName() + "). Laden klappt trotzdem meistens.");
+                            err.setVisibility(android.view.View.VISIBLE);
+                        }
+                    });
+
+                    close.setOnClickListener(v -> d.dismiss());
+                    load.setOnClickListener(v -> {
+                        action[0] = "download";
+                        d.dismiss();
+                    });
+                    d.setOnDismissListener(di -> {
+                        try {
+                            pv.setPlayer(null);
+                            player.release();
+                        } catch (Exception ignored) {
+                            // egal
+                        }
+                        JSObject o = new JSObject();
+                        o.put("action", action[0]);
+                        call.resolve(o);
+                    });
+                    d.setContentView(root);
+                    d.show();
+                } catch (Throwable e) {
                     call.reject(String.valueOf(e.getMessage()));
                 }
             }
