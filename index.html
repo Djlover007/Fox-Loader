@@ -482,7 +482,7 @@ async function getInstagram(url){
   var src=[];
   async function v1(){
     if(!logins.instagram)throw new Error('LOGIN:instagram');
-    var j=await getJson('https://www.instagram.com/api/v1/media/'+pk+'/info/',{headers:IGH,cookies:true});
+    var j=await igGet('https://www.instagram.com/api/v1/media/'+pk+'/info/');
     var it=j.items&&j.items[0];if(!it)throw new Error('nicht gefunden');
     return igV1(it);
   }
@@ -769,13 +769,23 @@ function igProfileName(t){
   }
   return null;
 }
-async function igGet(url){
-  var r=await get(url,{headers:IGH,cookies:true});
-  if(r.status===401||r.status===403||/\/accounts\/login/.test(r.url||'')){await refreshLogins();throw new Error(logins.instagram?'Instagram lehnt den Abruf ab ('+r.status+'). Melde dich unter Einstellungen › Konten neu bei Instagram an.':'LOGIN:instagram');}
-  if(r.status===429)throw new Error('Instagram bremst gerade, zu viele Abrufe. Warte ein paar Minuten und tippe dann auf „Mehr laden“.');
+async function igGet(url,tries){
+  tries=tries||0;
+  var r=null;
+  try{r=await L.webFetch({origin:'https://www.instagram.com',url:url,headers:{'X-IG-App-ID':'936619743392459','X-ASBD-ID':'129477','X-Requested-With':'XMLHttpRequest','Accept':'*/*'}});}
+  catch(e){r=null;}
+  if(!r||r.status===0)r=await get(url,{headers:IGH,cookies:true});
+  if((r.status===429||r.status===0)&&tries<2){await new Promise(function(ok){setTimeout(ok,4000*(tries+1));});return await igGet(url,tries+1);}
+  if(r.status===401||r.status===403||/\/accounts\/login/.test(r.url||'')){
+    await refreshLogins();
+    if(!logins.instagram)throw new Error('LOGIN:instagram');
+    var why='';try{why=JSON.parse(r.body).message||'';}catch(e){}
+    throw new Error('Instagram lehnt den Abruf ab ('+r.status+(why?': '+why:'')+'). Öffne einmal die Instagram-App oder melde dich unter Einstellungen › Konten neu an.');
+  }
+  if(r.status===429)throw new Error('Instagram bremst dein Konto gerade (429). Öffne kurz die Instagram-App, scroll ein bisschen und versuch es in 15 bis 30 Minuten nochmal.');
   if(r.status===404)throw new Error('Profil nicht gefunden.');
   if(r.status!==200)throw new Error('Instagram antwortet mit '+r.status);
-  try{return JSON.parse(r.body);}catch(e){throw new Error(logins.instagram?'Instagram-Antwort nicht lesbar.':'LOGIN:instagram');}
+  try{return JSON.parse(r.body);}catch(e){throw new Error(logins.instagram?'Instagram-Antwort nicht lesbar. Melde dich unter Einstellungen › Konten neu an.':'LOGIN:instagram');}
 }
 async function getIgProfile(name){
   if(!logins.instagram)throw new Error('LOGIN:instagram');

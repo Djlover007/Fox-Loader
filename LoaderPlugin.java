@@ -28,7 +28,10 @@ import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
+import android.os.Handler;
+import android.os.Looper;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -360,6 +363,119 @@ public class LoaderPlugin extends Plugin {
         }).start();
     }
 
+    // ---------------- Abruf wie im Browser (unsichtbare Seite der jeweiligen Plattform) ----------------
+    // Instagram blockt Abrufe, die nicht aus einer echten Webseite kommen. Darum laeuft der Abruf
+    // in einer unsichtbaren WebView auf instagram.com, mit allen Cookies und Kopfzeilen eines Browsers.
+
+    static final String DESK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    private WebView hv = null;
+    private String hvOrigin = null;
+    private boolean hvReady = false;
+    private final List<Runnable> hvWait = new ArrayList<>();
+    private final HashMap<String, PluginCall> hvCalls = new HashMap<>();
+    private int hvSeq = 0;
+
+    public class HvBridge {
+        @JavascriptInterface
+        public void done(String id, int status, String body) {
+            PluginCall c;
+            synchronized (hvCalls) {
+                c = hvCalls.remove(id);
+            }
+            if (c != null) {
+                JSObject o = new JSObject();
+                o.put("status", status);
+                o.put("body", body == null ? "" : body);
+                c.resolve(o);
+            }
+        }
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void ensureHv(Activity act, String origin) {
+        if (hv == null) {
+            hv = new WebView(act);
+            WebSettings st = hv.getSettings();
+            st.setJavaScriptEnabled(true);
+            st.setDomStorageEnabled(true);
+            st.setUserAgentString(DESK_UA);
+            CookieManager.getInstance().setAcceptCookie(true);
+            CookieManager.getInstance().setAcceptThirdPartyCookies(hv, true);
+            hv.addJavascriptInterface(new HvBridge(), "FoxHv");
+            hv.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    if (!hvReady) {
+                        hvReady = true;
+                        List<Runnable> w = new ArrayList<>(hvWait);
+                        hvWait.clear();
+                        for (Runnable r : w) {
+                            r.run();
+                        }
+                    }
+                }
+            });
+        }
+        if (!origin.equals(hvOrigin)) {
+            hvOrigin = origin;
+            hvReady = false;
+            hv.loadUrl(origin + "/robots.txt");
+        }
+    }
+
+    @PluginMethod
+    public void webFetch(final PluginCall call) {
+        final String origin = call.getString("origin", "https://www.instagram.com");
+        final String url = call.getString("url", "");
+        final String method = call.getString("method", "GET");
+        final String body = call.getString("body", null);
+        JSObject h = call.getObject("headers", null);
+        final String headers = h == null ? "{}" : h.toString();
+        final Activity act = getActivity();
+        if (act == null || url == null || !url.startsWith(origin + "/")) {
+            call.reject("Adresse passt nicht");
+            return;
+        }
+        final String id = "f" + (++hvSeq);
+        synchronized (hvCalls) {
+            hvCalls.put(id, call);
+        }
+        final String js = "(function(){var h=" + headers + ";"
+                + "try{var m=document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);if(m&&!h['X-CSRFToken'])h['X-CSRFToken']=m[1];}catch(e){}"
+                + "fetch(" + JSONObject.quote(url) + ",{method:" + JSONObject.quote(method) + ",headers:h,credentials:'include'"
+                + (body != null ? ",body:" + JSONObject.quote(body) : "") + "})"
+                + ".then(function(r){return r.text().then(function(t){FoxHv.done('" + id + "',r.status,t);});})"
+                + ".catch(function(e){FoxHv.done('" + id + "',0,String(e));});})();";
+        act.runOnUiThread(() -> {
+            try {
+                ensureHv(act, origin);
+                Runnable run = () -> hv.evaluateJavascript(js, null);
+                if (hvReady) {
+                    run.run();
+                } else {
+                    hvWait.add(run);
+                }
+            } catch (Throwable e) {
+                PluginCall c;
+                synchronized (hvCalls) {
+                    c = hvCalls.remove(id);
+                }
+                if (c != null) {
+                    c.reject(String.valueOf(e.getMessage()));
+                }
+            }
+        });
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            PluginCall c;
+            synchronized (hvCalls) {
+                c = hvCalls.remove(id);
+            }
+            if (c != null) {
+                c.reject("Zeitueberschreitung");
+            }
+        }, 45000);
+    }
+
     // ---------------- Anmeldung (Instagram, Facebook) ----------------
 
     private static String siteUrl(String site) {
@@ -422,6 +538,7 @@ public class LoaderPlugin extends Plugin {
             }
         }
         cm.flush();
+        hvOrigin = null;
         JSObject o = new JSObject();
         o.put("ok", !loggedIn(site));
         call.resolve(o);
@@ -478,6 +595,7 @@ public class LoaderPlugin extends Plugin {
                     done.setOnClickListener(v -> d.dismiss());
                     d.setOnDismissListener(di -> {
                         CookieManager.getInstance().flush();
+                        hvOrigin = null;
                         try {
                             w.destroy();
                         } catch (Exception ignored) {
