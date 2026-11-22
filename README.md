@@ -13,7 +13,7 @@ Zusätzlich:
 - TikTok ohne Wasserzeichen, auch Foto-Slides und „Nur Ton“
 - Instagram Reels, Beiträge, Karussells, Storys (Anmeldung in der App für Storys/private Konten)
 - Facebook-Videos, Reddit-Videos mit Ton, Galerien
-- YouTube bis 1080p, Bild und Ton werden auf dem Handy zusammengefügt; „Nur Ton“ als M4A
+- YouTube bis 1080p, Bild und Ton werden auf dem Handy zusammengefügt; „Nur Ton“ als MP3 (192 kbit/s, auf dem Handy umgewandelt) oder M4A
 - andere Seiten: Fox Loader sucht MP4-Videos auf der Seite
 - Kurzlinks (t.co, vm.tiktok.com, fb.watch, redd.it, youtu.be)
 - **Telegram:** öffentliche Kanäle ohne Anmeldung; mit Telegram-Anmeldung (QR-Code) auch eigene private Kanäle, Gruppen und Chats. Gesperrte Chats („Speichern beschränken“) bleiben gesperrt.

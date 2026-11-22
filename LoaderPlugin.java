@@ -1089,6 +1089,7 @@ public class LoaderPlugin extends Plugin {
         final String kind = call.getString("kind", "video");
         final String extIn = call.getString("ext", "");
         final boolean chunked = Boolean.TRUE.equals(call.getBoolean("chunked", false));
+        final boolean toCache = Boolean.TRUE.equals(call.getBoolean("toCache", false));
         final String name = clean(call.getString("name", "fox"));
         final Req r = reqOf(call);
         r.method = "GET";
@@ -1119,6 +1120,21 @@ public class LoaderPlugin extends Plugin {
                 Saved sv = null;
                 try {
                     long size;
+                    if (toCache) {
+                        // nur zwischenspeichern (z. B. fuer MP3-Umwandlung in der App)
+                        File cf = new File(getContext().getCacheDir(), "conv-" + id.replaceAll("[^A-Za-z0-9_-]", "_") + "." + ext);
+                        FileOutputStream fo = new FileOutputStream(cf);
+                        try {
+                            size = fetchTo(id, url, r, chunked, fo, (g, t) -> progress(id, t > 0 ? (int) (g * 100 / t) : -1, g, "load"));
+                        } finally {
+                            fo.close();
+                        }
+                        JSObject res = new JSObject();
+                        res.put("path", cf.getAbsolutePath());
+                        res.put("size", size);
+                        call.resolve(res);
+                        return;
+                    }
                     if (audio == null) {
                         sv = newFile(kind, file, mime, name, ext);
                         size = fetchTo(id, url, r, chunked, sv.out, (g, t) -> progress(id, t > 0 ? (int) (g * 100 / t) : -1, g, "load"));
@@ -1450,6 +1466,20 @@ public class LoaderPlugin extends Plugin {
     }
 
     // ---------------- Fertige Dateien ----------------
+
+    @PluginMethod
+    public void cacheDelete(PluginCall call) {
+        String path = call.getString("path", "");
+        File f = new File(path == null ? "" : path);
+        try {
+            if (f.getCanonicalPath().startsWith(getContext().getCacheDir().getCanonicalPath())) {
+                f.delete();
+            }
+        } catch (Exception ignored) {
+            // egal
+        }
+        call.resolve();
+    }
 
     @PluginMethod
     public void exists(PluginCall call) {
