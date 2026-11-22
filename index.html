@@ -608,21 +608,37 @@ async function getReddit(url){
 
 /* ================= YouTube ================= */
 var YTC=[
-  {name:'ANDROID_VR',id:28,ver:'1.60.19',ua:'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',extra:{deviceMake:'Oculus',deviceModel:'Quest 3',androidSdkVersion:32,osName:'Android',osVersion:'12L'}},
-  {name:'IOS',id:5,ver:'20.10.4',ua:'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',extra:{deviceMake:'Apple',deviceModel:'iPhone16,2',osName:'iPhone',osVersion:'18.3.2.22D82'}}
+  {name:'ANDROID_VR',id:28,ver:'1.65.10',ua:'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',extra:{deviceMake:'Oculus',deviceModel:'Quest 3',androidSdkVersion:32,osName:'Android',osVersion:'12L'}},
+  {name:'ANDROID_VR',id:28,ver:'1.43.32',ua:'com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2) gzip',extra:{deviceMake:'Oculus',deviceModel:'Quest 3',androidSdkVersion:32,osName:'Android',osVersion:'12'}},
+  {name:'IOS',id:5,ver:'20.10.4',ua:'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',extra:{deviceMake:'Apple',deviceModel:'iPhone16,2',osName:'iPhone',osVersion:'18.3.2.22D82'}},
+  {name:'ANDROID',id:3,ver:'20.10.38',ua:'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',extra:{androidSdkVersion:34,osName:'Android',osVersion:'14'}}
 ];
+var ytVisitor=null;
+async function ytVisitorData(){
+  if(ytVisitor!==null)return ytVisitor;
+  try{var r=await get('https://www.youtube.com/',{headers:{'Accept':'text/html'}});ytVisitor=((r.body||'').match(/"VISITOR_DATA":"([^"]+)"/)||(r.body||'').match(/"visitorData":"([^"]+)"/)||[])[1]||'';}
+  catch(e){ytVisitor='';}
+  return ytVisitor;
+}
+// prüft, ob YouTube die Download-Adresse wirklich herausgibt
+async function ytUrlOk(url,ua){
+  try{var r=await get(url,{headers:{'User-Agent':ua,'Range':'bytes=0-1'}});return r.status===200||r.status===206?'':String(r.status);}
+  catch(e){return 'Netz';}
+}
 function ytId(u){var m=String(u).match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([\w-]{11})/);return m?m[1]:null;}
 async function getYouTube(url){
   var id=ytId(url);if(!id)throw new Error('Das ist kein Link zu einem YouTube-Video.');
   var lastWhy='';
+  var vis=await ytVisitorData(),tried=[];
   for(var i=0;i<YTC.length;i++){
     var c=YTC[i];
     try{
-      var body=JSON.stringify({context:{client:Object.assign({clientName:c.name,clientVersion:c.ver,hl:'de',gl:'DE'},c.extra)},videoId:id,contentCheckOk:true,racyCheckOk:true});
+      var cl=Object.assign({clientName:c.name,clientVersion:c.ver,hl:'de',gl:'DE'},c.extra);if(vis)cl.visitorData=vis;
+      var body=JSON.stringify({context:{client:cl},videoId:id,contentCheckOk:true,racyCheckOk:true});
       var j=await getJson('https://www.youtube.com/youtubei/v1/player?prettyPrint=false',{method:'POST',body:body,
-        headers:{'Content-Type':'application/json','User-Agent':c.ua,'X-YouTube-Client-Name':String(c.id),'X-YouTube-Client-Version':c.ver,'Origin':'https://www.youtube.com'}});
+        headers:Object.assign({'Content-Type':'application/json','User-Agent':c.ua,'X-YouTube-Client-Name':String(c.id),'X-YouTube-Client-Version':c.ver,'Origin':'https://www.youtube.com'},vis?{'X-Goog-Visitor-Id':vis}:{})});
       var ps=j.playabilityStatus||{};
-      if(ps.status!=='OK'){lastWhy=ps.reason||ps.status||'';continue;}
+      if(ps.status!=='OK'){lastWhy=ps.reason||ps.status||'';tried.push(c.name+' '+c.ver+': '+String(lastWhy).slice(0,40));continue;}
       var sd=j.streamingData||{},ad=(sd.adaptiveFormats||[]).filter(function(f){return f.url;});
       var hdr={'User-Agent':c.ua};
       var vids=ad.filter(function(f){return /^video\/mp4/.test(f.mimeType)&&/avc1/.test(f.mimeType);});
@@ -635,15 +651,18 @@ async function getYouTube(url){
         var l=f.qualityLabel||f.height+'p';
         if(!vs.some(function(v){return v.label===l;}))vs.push({url:f.url,label:l,size:+f.contentLength||0,chunked:true});
       });
-      if(!vs.length){lastWhy='keine ladbaren Formate';continue;}
+      if(!vs.length){lastWhy='keine ladbaren Formate';tried.push(c.name+' '+c.ver+': keine Formate');continue;}
+      var bad=await ytUrlOk((au||vs[0]).url,c.ua);
+      if(!bad&&au)bad=await ytUrlOk(vs[0].url,c.ua);
+      if(bad){lastWhy='Download-Adresse abgelehnt ('+bad+')';tried.push(c.name+' '+c.ver+': '+bad);continue;}
       vs.sort(function(a,b){return (parseInt(b.label)||0)-(parseInt(a.label)||0);});
       var vd=j.videoDetails||{},th='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';
       var media=[{kind:'video',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:vs}];
       if(au)media.push({kind:'audio',thumb:th,dur:+vd.lengthSeconds||0,headers:hdr,variants:[{url:au.url,label:'MP3',ext:'mp3',mp3:true,chunked:true},{url:au.url,label:'M4A',ext:'m4a',size:+au.contentLength||0,chunked:true}]});
       return {id:id,text:vd.title||'',name:vd.author||'YouTube',handle:'',avatar:'',media:media,link:'https://www.youtube.com/watch?v='+id};
-    }catch(e){lastWhy=errText(e);}
+    }catch(e){lastWhy=errText(e);tried.push(c.name+' '+c.ver+': '+lastWhy.slice(0,40));}
   }
-  throw new Error('YouTube gibt das Video gerade nicht heraus'+(lastWhy?' ('+lastWhy.slice(0,120)+')':'')+'. YouTube ändert das oft, ein App-Update hilft meistens.');
+  throw new Error('YouTube gibt das Video gerade nicht heraus. YouTube ändert das oft, ein App-Update hilft meistens. ('+(tried.length?tried.join(' · '):lastWhy).slice(0,300)+')');
 }
 
 /* ================= Telegram (öffentliche Kanäle) ================= */
@@ -1572,7 +1591,7 @@ async function dl(i){
     var msg=errText(e);
     if(msg==='storage'){cur.dl[k]=null;toast('Erlaube Fox Loader den Speicher und tippe nochmal auf Laden.',6000);}
     else if(msg==='abgebrochen'){cur.dl[k]=null;}
-    else cur.dl[k]={state:'err',msg:msg};
+    else cur.dl[k]={state:'err',msg:(/403/.test(msg)&&tw.p==='youtube')?'YouTube hat den Download abgelehnt (403). Tippe oben nochmal auf „Laden“, dann holt Fox Loader eine frische Adresse.':msg};
   }
   renderLoad();
 }
