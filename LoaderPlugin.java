@@ -1090,6 +1090,7 @@ public class LoaderPlugin extends Plugin {
         final String extIn = call.getString("ext", "");
         final boolean chunked = Boolean.TRUE.equals(call.getBoolean("chunked", false));
         final boolean toCache = Boolean.TRUE.equals(call.getBoolean("toCache", false));
+        final boolean hls = Boolean.TRUE.equals(call.getBoolean("hls", false));
         final String name = clean(call.getString("name", "fox"));
         final Req r = reqOf(call);
         r.method = "GET";
@@ -1120,6 +1121,33 @@ public class LoaderPlugin extends Plugin {
                 Saved sv = null;
                 try {
                     long size;
+                    if (hls) {
+                        // Stream aus vielen Stuecken: alle laden, zusammensetzen, in MP4 umpacken
+                        hlsFetch(id, url, r, tmpV);
+                        progress(id, 97, tmpV.length(), "mux");
+                        remuxAll(tmpV, tmpM);
+                        tmpV.delete();
+                        sv = newFile(kind, file, mime, name, ext);
+                        FileInputStream fi = new FileInputStream(tmpM);
+                        byte[] b = new byte[65536];
+                        int n;
+                        size = 0;
+                        while ((n = fi.read(b)) > 0) {
+                            sv.out.write(b, 0, n);
+                            size += n;
+                        }
+                        fi.close();
+                        sv.out.close();
+                        tmpM.delete();
+                        String result = finish(sv, mime);
+                        JSObject res = new JSObject();
+                        res.put("uri", result);
+                        res.put("size", size);
+                        res.put("mime", mime);
+                        res.put("file", file);
+                        call.resolve(res);
+                        return;
+                    }
                     if (toCache) {
                         // nur zwischenspeichern (z. B. fuer MP3-Umwandlung in der App)
                         File cf = new File(getContext().getCacheDir(), "conv-" + id.replaceAll("[^A-Za-z0-9_-]", "_") + "." + ext);
@@ -1381,6 +1409,152 @@ public class LoaderPlugin extends Plugin {
         }
         MediaScannerConnection.scanFile(getContext(), new String[]{s.legacy.getAbsolutePath()}, new String[]{mime}, null);
         return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".foxupdate", s.legacy).toString();
+    }
+
+    private String readText(String url, Req r) throws Exception {
+        HttpURLConnection c = open(url, r, null);
+        try {
+            if (c.getResponseCode() != 200) {
+                throw new Exception("Server antwortet mit " + c.getResponseCode());
+            }
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0 && bo.size() < 4000000) {
+                bo.write(buf, 0, n);
+            }
+            in.close();
+            return bo.toString("UTF-8") + "\n#URL " + c.getURL().toString();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    // HLS: Wiedergabeliste lesen, alle Stuecke nacheinander in eine Datei schreiben
+    private void hlsFetch(String id, String url, Req r, File out) throws Exception {
+        String pl = readText(url, r);
+        String base = pl.substring(pl.lastIndexOf("\n#URL ") + 6).trim();
+        if (pl.contains("#EXT-X-STREAM-INF")) {
+            // Hauptliste: hoechste Bandbreite waehlen
+            String[] ls = pl.split("\n");
+            long best = -1;
+            String pick = null;
+            for (int i = 0; i < ls.length - 1; i++) {
+                if (ls[i].startsWith("#EXT-X-STREAM-INF")) {
+                    Matcher m = Pattern.compile("BANDWIDTH=(\\d+)").matcher(ls[i]);
+                    long bw = m.find() ? Long.parseLong(m.group(1)) : 0;
+                    String u = ls[i + 1].trim();
+                    if (!u.startsWith("#") && bw > best) {
+                        best = bw;
+                        pick = u;
+                    }
+                }
+            }
+            if (pick == null) {
+                throw new Exception("Stream-Liste leer");
+            }
+            url = new URL(new URL(base), pick).toString();
+            pl = readText(url, r);
+            base = pl.substring(pl.lastIndexOf("\n#URL ") + 6).trim();
+        }
+        if (pl.contains("#EXT-X-KEY") && !pl.contains("METHOD=NONE")) {
+            throw new Exception("Der Stream ist verschluesselt, das geht leider nicht.");
+        }
+        List<String> segs = new ArrayList<>();
+        String init = null;
+        for (String line : pl.split("\n")) {
+            String l = line.trim();
+            if (l.startsWith("#EXT-X-MAP")) {
+                Matcher m = Pattern.compile("URI=\"([^\"]+)\"").matcher(l);
+                if (m.find()) {
+                    init = new URL(new URL(base), m.group(1)).toString();
+                }
+            } else if (!l.isEmpty() && !l.startsWith("#")) {
+                segs.add(new URL(new URL(base), l).toString());
+            }
+        }
+        if (segs.isEmpty()) {
+            throw new Exception("Keine Stream-Stuecke gefunden");
+        }
+        FileOutputStream fo = new FileOutputStream(out);
+        try {
+            long got = 0;
+            if (init != null) {
+                got += fetchTo(id, init, r, false, fo, (g, t) -> { });
+            }
+            for (int i = 0; i < segs.size(); i++) {
+                if (cancelled.contains(id)) {
+                    throw new InterruptedException("abgebrochen");
+                }
+                final int idx = i;
+                final long before = got;
+                Exception last = null;
+                long n = 0;
+                for (int tries = 0; tries < 3; tries++) {
+                    try {
+                        n = fetchTo(id, segs.get(i), r, false, fo, (g, t) -> { });
+                        last = null;
+                        break;
+                    } catch (InterruptedException ie) {
+                        throw ie;
+                    } catch (Exception e) {
+                        last = e;
+                        Thread.sleep(800);
+                    }
+                }
+                if (last != null) {
+                    throw last;
+                }
+                got += n;
+                progress(id, (int) ((idx + 1) * 95L / segs.size()), before + n, "hls");
+            }
+        } finally {
+            fo.close();
+        }
+    }
+
+    // Alle Spuren (Bild + Ton) einer Datei in eine normale MP4 umpacken (ohne Neukodieren)
+    @SuppressLint("WrongConstant")
+    private static void remuxAll(File in, File out) throws Exception {
+        MediaExtractor ex = new MediaExtractor();
+        MediaMuxer mm = null;
+        try {
+            ex.setDataSource(in.getAbsolutePath());
+            int n = ex.getTrackCount();
+            List<Integer> src = new ArrayList<>();
+            mm = new MediaMuxer(out.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            List<Integer> dst = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                MediaFormat f = ex.getTrackFormat(i);
+                String mime = f.getString(MediaFormat.KEY_MIME);
+                if (mime != null && (mime.startsWith("video/") || mime.startsWith("audio/"))) {
+                    src.add(i);
+                    dst.add(mm.addTrack(f));
+                }
+            }
+            if (src.isEmpty()) {
+                throw new Exception("Keine Bild- oder Tonspur im Stream");
+            }
+            mm.start();
+            ByteBuffer bb = ByteBuffer.allocate(8 * 1024 * 1024);
+            for (int k = 0; k < src.size(); k++) {
+                ex.selectTrack(src.get(k));
+                ex.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+                copy(ex, mm, dst.get(k), bb);
+                ex.unselectTrack(src.get(k));
+            }
+            mm.stop();
+        } finally {
+            if (mm != null) {
+                try {
+                    mm.release();
+                } catch (Exception ignored) {
+                    // egal
+                }
+            }
+            ex.release();
+        }
     }
 
     // Video-Spur aus der einen Datei und Ton-Spur aus der anderen in eine MP4 packen (ohne Neukodieren)

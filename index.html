@@ -280,7 +280,7 @@ function abs(u,base){try{return new URL(htmlDec(u),base).toString();}catch(e){re
 function pLabel(w,h){w=+w||0;h=+h||0;if(!w||!h)return '';return Math.min(w,h)+'p';}
 function uniq(list,key){var s={};return list.filter(function(x){var k=key(x);if(!k||s[k])return false;s[k]=1;return true;});}
 
-var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',tgpriv:'Telegram',web:'Webseite'};
+var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',tgpriv:'Telegram',xnxx:'XNXX',xvideos:'XVideos',web:'Webseite'};
 var DESK='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var L=plug('Loader');
 if(L){try{L.addListener('progress',window.__foxProg=function(e){
@@ -292,7 +292,7 @@ if(L){try{L.addListener('progress',window.__foxProg=function(e){
   if(c)c.textContent=phaseText(e.phase);
   var tp=document.getElementById('tp-'+k);if(tp)tp.textContent=(e.pct>=0?e.pct+'%':mb(e.got));
 });}catch(x){}}
-function phaseText(p){return p==='retry'?'YouTube hat abgelehnt, versuche anderen Weg …':p==='mp3'?'Wird in MP3 umgewandelt …':p==='audio'?'Ton wird geladen …':p==='mux'?'Bild und Ton werden zusammengefügt …':'Wird geladen …';}
+function phaseText(p){return p==='hls'?'Stream-Stücke werden geladen …':p==='retry'?'YouTube hat abgelehnt, versuche anderen Weg …':p==='mp3'?'Wird in MP3 umgewandelt …':p==='audio'?'Ton wird geladen …':p==='mux'?'Bild und Ton werden zusammengefügt …':'Wird geladen …';}
 
 async function get(url,opt){return await L.get(Object.assign({url:url},opt||{}));}
 async function getJson(url,opt){
@@ -325,6 +325,8 @@ function platOf(u){
   if(/(^|\.)(reddit\.com|redd\.it)$/.test(h))return 'reddit';
   if(/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(h))return 'youtube';
   if(/^(t\.me|telegram\.me|telegram\.dog)$/.test(h))return 'telegram';
+  if(/(^|\.)xnxx\.[a-z.]+$/.test(h))return 'xnxx';
+  if(/(^|\.)xvideos\.[a-z.]+$/.test(h))return 'xvideos';
   return 'web';
 }
 function detect(t){
@@ -1161,6 +1163,46 @@ async function tgPreview(m,onLoad){
   var box=$('.pimg');if(box)box.innerHTML=d?'<img src="'+d+'" alt="">':'<small class="hint">Vorschau nicht verfügbar</small>';
 }
 
+/* ================= XNXX / XVideos (gleicher Player) ================= */
+async function getXv(url,p){
+  var r=await get(url,{headers:{'User-Agent':DESK,'Accept':'text/html'}});
+  var b=r.body||'';
+  if(r.status!==200)throw new Error('Seite antwortet mit '+r.status);
+  function call(n){var m=b.match(new RegExp('html5player\\.'+n+"\\(\\s*'((?:[^'\\\\]|\\\\.)*)'"));return m?m[1].replace(/\\(.)/g,'$1'):'';}
+  var low=call('setVideoUrlLow'),high=call('setVideoUrlHigh'),hls=call('setVideoHLS');
+  if(!low&&!high&&!hls){
+    if(/html5player/.test(b)===false&&!/\/video[\.\-]/.test(r.url))throw new Error('Das ist keine Video-Seite. Öffne zuerst ein einzelnes Video und kopiere dessen Link.');
+    throw new Error('Auf dieser Seite habe ich kein Video gefunden. Ist es gelöscht oder nur mit Anmeldung sichtbar?');
+  }
+  var title=call('setVideoTitle')||htmlDec((b.match(/<meta property="og:title" content="([^"]*)"/)||[])[1]||'');
+  var thumb=call('setThumbUrl169')||call('setThumbUrl')||htmlDec((b.match(/<meta property="og:image" content="([^"]*)"/)||[])[1]||'');
+  var up=call('setUploaderName');
+  var dur=+((b.match(/<meta property="og:duration" content="(\d+)"/)||[])[1]||0);
+  if(!dur){var dm=b.match(/"duration"\s*:\s*"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?"/);if(dm)dur=(+dm[1]||0)*3600+(+dm[2]||0)*60+(+dm[3]||0);}
+  var vs=[],ref={'Referer':r.url};
+  if(hls){
+    try{
+      var m3=(await get(hls,{headers:ref})).body||'',ls=m3.split(/\r?\n/);
+      for(var i=0;i<ls.length-1;i++){
+        if(!/^#EXT-X-STREAM-INF/.test(ls[i]))continue;
+        var u=ls[i+1].trim();if(!u||u[0]==='#')continue;
+        var res=(ls[i].match(/RESOLUTION=(\d+)x(\d+)/)||[]),nm=(ls[i].match(/NAME="?(\d+p)/)||[])[1];
+        var lab=nm||pLabel(res[1],res[2])||'HLS';
+        vs.push({url:abs(u,hls),label:lab,hls:true,headers:ref});
+      }
+      vs.sort(function(a,b2){return (parseInt(b2.label)||0)-(parseInt(a.label)||0);});
+      vs=uniq(vs,function(v){return v.label;});
+    }catch(e){}
+  }
+  var hq=vs.length?parseInt(vs[0].label)||0:0;
+  if(high)vs.push({url:high,label:'MP4 hoch',headers:ref});
+  if(low&&low!==high)vs.push({url:low,label:'MP4 klein',headers:ref});
+  // Beste Qualität vorne; Vorschau nimmt die MP4-Datei
+  var media=[{kind:'video',thumb:thumb,dur:dur,headers:ref,variants:vs,pv:high||low||''}];
+  var host='';try{host=new URL(r.url).hostname.replace(/^www\./,'');}catch(e){}
+  return {id:(r.url.match(/video[\.\-]?([a-z0-9]+)/i)||[])[1]||String(Date.now()),text:title,name:up||PLAT[p],handle:'',avatar:'',media:media,link:r.url,p:p};
+}
+
 /* ================= Andere Seiten ================= */
 async function getWeb(url){
   var direct=url.match(/\.(mp4|m4v|mov|jpe?g|png|gif|webp|mp3|m4a)(\?|#|$)/i);
@@ -1571,7 +1613,7 @@ async function previewList(list,start){
   pvList=list;
   try{
     var r=await L.preview({start:start,items:list.map(function(x){
-      var o={url:x.v.url,title:x.title||'Vorschau',done:!!x.done};
+      var o={url:(x.v.hls&&x.m.pv)?x.m.pv:x.v.url,title:x.title||'Vorschau',done:!!x.done};
       if(x.v.audio)o.audio=x.v.audio;
       var h=x.v.headers||x.headers||x.m.headers;if(h)o.headers=h;
       return o;
@@ -1612,6 +1654,7 @@ async function lookup(text,fromShare){
       case 'reddit':tw=await getReddit(d.url);break;
       case 'youtube':tw=await getYouTube(d.url);break;
       case 'telegram':tw=await getTelegram(d.url);break;
+      case 'xnxx':case 'xvideos':tw=await getXv(d.url,d.p);break;
       default:tw=await getWeb(d.url);
     }
     tw.p=tw.p||(d.p==='reddit'&&tw.link&&/youtube/.test(tw.link)?'youtube':d.p);
@@ -1647,6 +1690,7 @@ async function dl(i){
   var name=PLAT[tw.p]+'_'+(who?who+'_':'')+String(tw.id).slice(-19)+(tw.media.filter(function(x){return x.kind!=='audio';}).length>1&&m.kind!=='audio'?'_'+(i+1):'')+(v.label&&!/^(Original|Video|Standard|Ton)/.test(v.label)?'_'+v.label.replace(/\s+/g,''):'');
   try{
     var opt={id:k,url:v.url,name:name,kind:kind,ext:v.ext||(kind==='video'?'mp4':''),chunked:!!v.chunked};
+    if(v.hls)opt.hls=true;
     if(v.audio)opt.audio=v.audio;
     var h=v.headers||m.headers;if(h)opt.headers=h;
     if(v.cookies)opt.cookies=true;
@@ -1921,7 +1965,7 @@ function renderLoad(){
     '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen" value="'+esc(val)+'" aria-label="Link zum Beitrag">'+
     '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
     '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button>'+
-    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>andere Seiten</span></div>'+(logins.telegram?'<button class="btn wide" data-act="tgchats">'+ic('list')+'Meine Telegram-Chats</button>':'')+'</div>';
+    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>XNXX</span><span>XVideos</span><span>andere Seiten</span></div>'+(logins.telegram?'<button class="btn wide" data-act="tgchats">'+ic('list')+'Meine Telegram-Chats</button>':'')+'</div>';
 
   if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
   if(needLogin){
