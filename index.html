@@ -198,6 +198,7 @@ img.gone{visibility:hidden}
 .ib.star.on{color:#e8a10c}
 .ib.star.on svg{fill:#e8a10c}
 #pfq{margin-bottom:2px}
+.plats button{font:inherit;font-size:12px;font-weight:700;color:var(--fg);background:var(--surface2);border:0;border-radius:999px;padding:6px 11px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -280,6 +281,7 @@ function abs(u,base){try{return new URL(htmlDec(u),base).toString();}catch(e){re
 function pLabel(w,h){w=+w||0;h=+h||0;if(!w||!h)return '';return Math.min(w,h)+'p';}
 function uniq(list,key){var s={};return list.filter(function(x){var k=key(x);if(!k||s[k])return false;s[k]=1;return true;});}
 
+var SITES=[['X','https://x.com/'],['TikTok','https://www.tiktok.com/'],['Instagram','https://www.instagram.com/'],['Facebook','https://m.facebook.com/'],['Reddit','https://www.reddit.com/'],['YouTube','https://m.youtube.com/'],['Telegram','https://t.me/s/telegram'],['XNXX','https://www.xnxx.com/'],['XVideos','https://www.xvideos.com/']];
 var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',tgpriv:'Telegram',xnxx:'XNXX',xvideos:'XVideos',web:'Webseite'};
 var DESK='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var L=plug('Loader');
@@ -1949,6 +1951,16 @@ async function toMp3(k,v,name,headers){
   }
 }
 
+/* ================= Browser in der App ================= */
+async function browseSite(url){
+  if(!L)return;
+  try{
+    var r=await L.browse({url:url});
+    await refreshLogins();
+    if(r&&r.action==='load'&&r.url){go('load');var u=$('#url');if(u)u.value=r.url;lookup(r.url);}
+  }catch(e){toast(errText(e));}
+}
+
 /* ================= Ansichten ================= */
 function go(t){tab=t;save('fl-tab',t);if(t==='load'&&(lastLater||tgLater)&&!cur&&!busy){var ll=lastLater,tl=tgLater;lastLater=null;tgLater=null;setTimeout(function(){if(tl)tgOpenById(tl.tg,tl.title);else{var u=$('#url');if(u)u.value=ll;lookup(ll);}},0);}Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});render();$('#main').scrollTop=0;}
 document.getElementById('bnav').addEventListener('click',function(e){var b=e.target.closest('button[data-tab]');if(b)go(b.dataset.tab);});
@@ -1965,7 +1977,7 @@ function renderLoad(){
     '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen" value="'+esc(val)+'" aria-label="Link zum Beitrag">'+
     '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
     '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button>'+
-    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>XNXX</span><span>XVideos</span><span>andere Seiten</span></div>'+(logins.telegram?'<button class="btn wide" data-act="tgchats">'+ic('list')+'Meine Telegram-Chats</button>':'')+'</div>';
+    '<div class="plats">'+SITES.map(function(x,i){return '<button data-act="site" data-i="'+i+'">'+x[0]+'</button>';}).join('')+'<button data-act="siteown">andere Seite …</button></div><small class="hint" style="text-align:center">Antippen öffnet die Seite in Fox Loader. Video öffnen, dann oben auf „↓ Laden“.</small>'+(logins.telegram?'<button class="btn wide" data-act="tgchats">'+ic('list')+'Meine Telegram-Chats</button>':'')+'</div>';
 
   if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
   if(needLogin){
@@ -2195,6 +2207,9 @@ document.addEventListener('click',async function(e){
     case 'popen':{var pl=pfList(b.dataset.l),px=pl[i];if(px){go('load');openRef(px);}break;}
     case 'pdel':{e.stopPropagation();var dl0=b.dataset.l==='fav'?favs:recent;dl0.splice(i,1);save(b.dataset.l==='fav'?'fl-favs':'fl-recent',dl0);renderProfiles();break;}
     case 'pfload':pfLoad(b.dataset.k);break;
+    case 'site':{var st0=SITES[i];if(st0)browseSite(st0[1]);break;}
+    case 'siteown':openSheet('<h3>Andere Seite öffnen</h3><input type="text" id="ownurl" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="z. B. pinterest.com" value="'+esc(load('fl-own',''))+'"><button class="btn pri wide" data-act="ownopen">Öffnen</button><button class="btn wide" data-act="close">Abbrechen</button>');break;
+    case 'ownopen':{var ou=($('#ownurl').value||'').trim();if(!ou)break;if(!/^https?:\/\//i.test(ou))ou='https://'+ou;ou=ou.replace(/^http:/i,'https:');save('fl-own',ou);closeSheet();browseSite(ou);break;}
     case 'upd':closeSheet();checkUpdate(true);break;
     case 'updgo':doUpdate();break;
   }

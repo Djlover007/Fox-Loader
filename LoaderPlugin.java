@@ -611,6 +611,152 @@ public class LoaderPlugin extends Plugin {
         });
     }
 
+    // ---------------- Browser in der App (Seite durchsuchen, dann "Laden") ----------------
+
+    private WebView bv = null;
+    private String bvHost = "";
+
+    private static String hostOf(String u) {
+        try {
+            String h = new URL(u).getHost().toLowerCase();
+            return h.replaceFirst("^(www|m|mobile)\\.", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    @PluginMethod
+    public void browse(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final Activity act = getActivity();
+        if (act == null || url == null || !url.startsWith("https://")) {
+            call.reject("Ungueltige Adresse");
+            return;
+        }
+        act.runOnUiThread(() -> {
+            try {
+                final String[] action = {"close"};
+                if (bv == null) {
+                    bv = new WebView(act);
+                    WebSettings st = bv.getSettings();
+                    st.setJavaScriptEnabled(true);
+                    st.setDomStorageEnabled(true);
+                    st.setUserAgentString(UA);
+                    st.setSupportMultipleWindows(false);
+                    st.setJavaScriptCanOpenWindowsAutomatically(false);
+                    st.setMediaPlaybackRequiresUserGesture(true);
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(bv, true);
+                }
+                if (bv.getParent() != null) {
+                    ((ViewGroup) bv.getParent()).removeView(bv);
+                }
+                String h = hostOf(url);
+                if (bv.getUrl() == null || !h.equals(bvHost)) {
+                    bvHost = h;
+                    bv.clearHistory();
+                    bv.loadUrl(url);
+                }
+
+                LinearLayout root = new LinearLayout(act);
+                root.setOrientation(LinearLayout.VERTICAL);
+                root.setBackgroundColor(Color.WHITE);
+                LinearLayout bar = new LinearLayout(act);
+                bar.setOrientation(LinearLayout.HORIZONTAL);
+                bar.setGravity(Gravity.CENTER_VERTICAL);
+                bar.setBackgroundColor(Color.rgb(17, 17, 20));
+                bar.setPadding(dp(act, 4), dp(act, 6), dp(act, 8), dp(act, 6));
+                Button close = new Button(act);
+                close.setText("\u2715");
+                close.setTextColor(Color.WHITE);
+                close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+                close.setBackgroundColor(Color.TRANSPARENT);
+                bar.addView(close, new LinearLayout.LayoutParams(dp(act, 48), dp(act, 46)));
+                Button back = new Button(act);
+                back.setText("\u2039");
+                back.setTextColor(Color.WHITE);
+                back.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+                back.setBackgroundColor(Color.TRANSPARENT);
+                bar.addView(back, new LinearLayout.LayoutParams(dp(act, 44), dp(act, 46)));
+                final TextView t = new TextView(act);
+                t.setTextColor(Color.rgb(220, 220, 220));
+                t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                t.setMaxLines(1);
+                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                t.setText(bv.getUrl() == null ? url : bv.getUrl());
+                bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                Button load = new Button(act);
+                load.setText("\u2193 Laden");
+                load.setAllCaps(false);
+                load.setTextColor(Color.WHITE);
+                load.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+                load.setBackgroundColor(Color.rgb(232, 100, 12));
+                load.setPadding(dp(act, 14), 0, dp(act, 14), 0);
+                bar.addView(load, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(act, 42)));
+                root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                root.addView(bv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+                bv.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest req) {
+                        String s = req.getUrl().toString();
+                        // keine fremden Apps oder Werbe-Weiterleitungen starten
+                        return !(s.startsWith("https://") || s.startsWith("http://"));
+                    }
+
+                    @Override
+                    public void doUpdateVisitedHistory(WebView view, String u, boolean reload) {
+                        t.setText(u);
+                    }
+                });
+
+                final Dialog d = new Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+                close.setOnClickListener(v -> d.dismiss());
+                back.setOnClickListener(v -> {
+                    if (bv.canGoBack()) {
+                        bv.goBack();
+                    }
+                });
+                load.setOnClickListener(v -> {
+                    action[0] = "load";
+                    d.dismiss();
+                });
+                d.setOnKeyListener((di, code, ev) -> {
+                    if (code == android.view.KeyEvent.KEYCODE_BACK && ev.getAction() == android.view.KeyEvent.ACTION_UP) {
+                        if (bv.canGoBack()) {
+                            bv.goBack();
+                        } else {
+                            d.dismiss();
+                        }
+                        return true;
+                    }
+                    return code == android.view.KeyEvent.KEYCODE_BACK;
+                });
+                d.setOnDismissListener(di -> {
+                    String cu = bv.getUrl();
+                    try {
+                        bv.onPause();
+                        bv.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null);
+                        if (bv.getParent() != null) {
+                            ((ViewGroup) bv.getParent()).removeView(bv);
+                        }
+                    } catch (Exception ignored) {
+                        // egal
+                    }
+                    JSObject o = new JSObject();
+                    o.put("action", action[0]);
+                    o.put("url", cu == null ? "" : cu);
+                    call.resolve(o);
+                });
+                bv.onResume();
+                d.setContentView(root);
+                d.show();
+            } catch (Throwable e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
     // ---------------- Anmeldung (Instagram, Facebook) ----------------
 
     private static String siteUrl(String site) {
