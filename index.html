@@ -124,7 +124,6 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 @keyframes spUp{from{transform:translateY(10px);opacity:0}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* Fox Loader */
-.bnav{grid-template-columns:repeat(2,1fr)}
 .logo,#splash .sp-logo{box-shadow:inset 0 0 0 1px var(--line)}
 .inrow{display:flex;gap:8px}
 .inrow input{flex:1;min-width:0;font-size:16px}
@@ -188,6 +187,17 @@ img.gone{visibility:hidden}
 .tile .st.lk{font-size:12px;background:rgba(0,0,0,.6)}
 .qrbox{background:#fff;border-radius:16px;padding:10px;width:min(260px,70vw);margin:4px auto}
 .qrbox svg{display:block;width:100%;height:auto}
+.bnav{grid-template-columns:repeat(3,1fr)}
+.plist{display:flex;flex-direction:column;gap:6px}
+.prow{display:flex;gap:12px;align-items:center;background:var(--surface);border-radius:16px;padding:8px 10px;cursor:pointer}
+.prow .tx{flex:1;min-width:0;display:flex;flex-direction:column}
+.prow .tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .tx small{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.av{position:relative;width:44px;height:44px;border-radius:50%;background:var(--surface2);flex:none;display:grid;place-items:center;font-weight:800;color:var(--muted);overflow:hidden}
+.av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ib.star.on{color:#e8a10c}
+.ib.star.on svg{fill:#e8a10c}
+#pfq{margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -198,6 +208,8 @@ img.gone{visibility:hidden}
       <circle cx="83" cy="83" r="21" fill="#fff"/><circle cx="83" cy="83" r="18" fill="#F57C1F"/><path d="M83 72v16" stroke="#fff" stroke-width="5" stroke-linecap="round"/><polygon fill="#fff" points="74,83 92,83 83,94"/>
     </symbol>
     <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.8 2.8 2.6 3 5.2"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
     <symbol id="i-paste" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></symbol>
@@ -225,7 +237,8 @@ img.gone{visibility:hidden}
 
 <nav class="bnav" id="bnav" aria-label="Navigation">
   <button data-tab="load" aria-current="page"><span class="pill"><svg class="i"><use href="#i-down"/></svg></span>Laden</button>
-  <button data-tab="list"><span class="pill"><svg class="i"><use href="#i-list"/></svg></span>Meine Downloads</button>
+  <button data-tab="prof"><span class="pill"><svg class="i"><use href="#i-users"/></svg></span>Profile</button>
+  <button data-tab="list"><span class="pill"><svg class="i"><use href="#i-list"/></svg></span>Downloads</button>
 </nav>
 
 <div class="scrim" id="scrim"></div>
@@ -1108,13 +1121,13 @@ function xProfileName(t){
 }
 async function xOps(force){
   var c=load('fl-xops',null);
-  if(c&&c.ops&&c.ops.UserMedia&&!force&&Date.now()-c.t<12*3600e3)return c.ops;
+  if(c&&c.ops&&c.ops.UserMedia&&c.ops.Following&&!force&&Date.now()-c.t<12*3600e3)return c.ops;
   var r=await get('https://x.com/',{cookies:true,headers:{'Accept':'text/html'}});
   var m=(r.body||'').match(/https:\/\/abs\.twimg\.com\/responsive-web\/client-web(?:-legacy)?\/main\.[\w]+\.js/);
   if(!m)throw new Error('X-Seite nicht lesbar (Hauptskript fehlt).');
   var js=(await get(m[0])).body||'';
   var ops={};
-  ['UserByScreenName','UserMedia'].forEach(function(n){
+  ['UserByScreenName','UserMedia','Following'].forEach(function(n){
     var i=js.indexOf('operationName:"'+n+'"');if(i<0)return;
     var id=(js.slice(Math.max(0,i-80),i).match(/queryId:"([\w-]+)",\s*$/)||[])[1];if(!id)return;
     var tail=js.slice(i,i+6000);
@@ -1130,6 +1143,7 @@ async function xOps(force){
 async function xGql(name,vars,retry){
   if(!logins.x)throw new Error('LOGIN:x');
   var ops=await xOps(retry===2),o=ops[name];
+  if(!o)throw new Error('X hat seine Technik geändert ('+name+' fehlt). Ein App-Update hilft.');
   var ct0=((await L.cookie({url:'https://x.com',name:'ct0'}))||{}).value||'';
   if(!ct0)throw new Error('LOGIN:x');
   var f={},tg={};o.feat.forEach(function(k){f[k]=retry!==1;});o.tog.forEach(function(k){tg[k]=false;});
@@ -1424,9 +1438,11 @@ function profBarHtml(pr){
      '<button class="btn pri" data-act="pall">'+ic('check')+'Alle auswählen</button>'+(done?'<span class="hint">'+done+' gespeichert</span>':''))+'</div>';
 }
 function renderProfile(pr){
+  if(!pr.noted){pr.noted=1;try{noteProfile(pr);}catch(e){}}
   var u=pr.user,vis=profVisible(pr);
   var h='<div class="box"><div class="tw">'+(u.avatar?(pr.p==='x'?'<img src="'+esc(u.avatar)+'" alt="">':'<img data-src="'+esc(u.avatar)+'" alt="">'):'<span class="pf">'+(pr.p==='tgpriv'||pr.p==='telegram'?'TG':PLAT[pr.p])+'</span>')+
     '<div class="tx"><b>'+esc(u.name)+'</b><small>'+(u.handle?'@'+esc(u.handle):PLAT[pr.p])+(u.count?' · '+u.count+' Medien':'')+'</small></div>'+
+    '<button class="ib star'+(isFav(pr)?' on':'')+'" data-act="fav" aria-label="Favorit">'+ic('star')+'</button>'+
     '<button class="ib" data-act="clear" aria-label="Schließen">'+ic('x')+'</button></div>'+
     '<div class="chips"><button class="chip" data-act="ponly" data-k="video" aria-pressed="'+(pr.only==='video')+'">Nur Videos</button><button class="chip" data-act="ponly" data-k="all" aria-pressed="'+(pr.only==='all')+'">Videos und Bilder</button></div>'+
     '<small class="hint">'+(pr.p==='tgpriv'?'Antippen = Vorschaubild ansehen. Kreis oben rechts = auswählen.':'Antippen = Vorschau (im Player nach oben wischen = nächstes Video). Kreis oben rechts = auswählen. Qualität: '+(set.q==='best'?'beste':set.q==='small'?'kleinste':'bis 720p')+' (Einstellungen).')+'</small></div>';
@@ -1481,6 +1497,7 @@ async function lookup(text,fromShare){
   if(busy)return;
   text=String(text||'').trim();
   if(!text){toast('Füge zuerst einen Link ein.');return;}
+  if(!fromShare||true)save('fl-last',{text:text});
   busy=true;lastErr='';needLogin='';if(igPr){igPr=null;L.grabStop().catch(function(){});}cur=null;go('load');
   try{
     var d=detect(text);
@@ -1589,10 +1606,156 @@ function hydrate(){
   });
 }
 
+
+/* ================= Reiter „Profile“: Favoriten, zuletzt angesehen, Folge ich ================= */
+var favs=load('fl-favs',[]),recent=load('fl-recent',[]),follows=load('fl-follows',{}),pfFilter='',pfBusy={};
+function pkey(x){return x.p+':'+String(x.p==='tgpriv'?x.id:(x.handle||'')).toLowerCase();}
+function profRef(pr){return {p:pr.p,id:String(pr.user.id||''),handle:pr.user.handle||'',name:pr.user.name||pr.user.handle||'',avatar:pr.p==='x'?(pr.user.avatar||''):''};}
+function isFav(pr){var k=pkey(profRef(pr));return favs.some(function(f){return pkey(f)===k;});}
+function noteProfile(pr){
+  var r=profRef(pr),k=pkey(r);
+  recent=recent.filter(function(x){return pkey(x)!==k;});recent.unshift(r);while(recent.length>40)recent.pop();save('fl-recent',recent);
+  if(pr.p==='tgpriv')save('fl-last',{tg:r.id,title:r.name});
+  // Profilbild klein speichern (Instagram-Bilder laufen sonst ab)
+  if(pr.user.avatar&&pr.p!=='x')smallThumb(pr.user.avatar).then(function(d){if(!d)return;[recent,favs].forEach(function(l){l.forEach(function(x){if(pkey(x)===k)x.avatar=d;});});save('fl-recent',recent);save('fl-favs',favs);});
+}
+function toggleFav(pr){
+  var r=profRef(pr),k=pkey(r),i=-1;
+  favs.forEach(function(f,j){if(pkey(f)===k)i=j;});
+  if(i>=0){favs.splice(i,1);toast('Aus den Favoriten entfernt.');}
+  else{var old=recent.filter(function(x){return pkey(x)===k;})[0];if(old&&old.avatar)r.avatar=old.avatar;favs.unshift(r);toast('Zu den Favoriten hinzugefügt. Du findest es unter „Profile“.');}
+  save('fl-favs',favs);
+}
+function openRef(x){
+  if(x.p==='x')return lookup('https://x.com/'+x.handle);
+  if(x.p==='instagram')return lookup('https://www.instagram.com/'+x.handle+'/');
+  if(x.p==='telegram')return lookup('https://t.me/'+x.handle);
+  if(x.p==='tgpriv')return tgOpenById(x.id,x.name);
+}
+async function tgOpenById(id,title){
+  go('load');busy=true;lastErr='';needLogin='';cur=null;renderLoad();
+  try{
+    var c=await tgReady();
+    if(!tgDialogs.length){var ds=await c.getDialogs({limit:200});tgDialogs=ds.filter(function(d){return d.entity&&(d.isChannel||d.isGroup||d.isUser);});}
+    var d=tgDialogs.filter(function(x){return String(x.entity.id)===String(id);})[0];
+    if(!d)throw new Error('„'+(title||'Chat')+'“ finde ich nicht mehr in deinen Telegram-Chats.');
+    busy=false;cur=tgProfileFor(d.entity,d.title||d.name||title);render();await xProfileMore();
+    for(var t=0;t<3;t++){if(cur&&cur.kind==='profile'&&profVisible(cur).length<9&&!cur.done&&!cur.err)await xProfileMore();}
+  }catch(e){busy=false;var m=errText(e);if(/^LOGIN:/.test(m))needLogin=m.slice(6);else lastErr=e&&e.errorMessage?tgErr(e):m;render();}
+}
+function avHtml(x){
+  var init=esc(String(x.name||x.handle||'?').trim().charAt(0).toUpperCase()||'?');
+  if(!x.avatar)return '<span class="av">'+init+'</span>';
+  if(/^data:/.test(x.avatar)||x.p==='x')return '<span class="av"><img src="'+esc(x.avatar)+'" alt="" loading="lazy" onerror="this.remove()">'+init+'</span>';
+  return '<span class="av"><img data-src="'+esc(x.avatar)+'" alt="">'+init+'</span>';
+}
+function prow(x,list,i,canDel){
+  return '<div class="prow" data-act="popen" data-l="'+list+'" data-i="'+i+'" role="button">'+avHtml(x)+
+    '<span class="tx"><b>'+esc(x.name||x.handle)+'</b><small>'+esc(PLAT[x.p]||'')+(x.handle?' · @'+esc(x.handle):'')+'</small></span>'+
+    (canDel?'<button class="ib sm" data-act="pdel" data-l="'+list+'" data-i="'+i+'" aria-label="Entfernen">'+ic('x')+'</button>':'')+'</div>';
+}
+function pfList(name){return name==='fav'?favs:name==='rec'?recent:(follows[name]&&follows[name].users)||[];}
+function pfMatch(x){if(!pfFilter)return true;var q=pfFilter.toLowerCase();return String(x.name||'').toLowerCase().indexOf(q)>=0||String(x.handle||'').toLowerCase().indexOf(q)>=0;}
+function renderProfiles(){
+  var h='<div class="view">';
+  h+='<input type="text" id="pfq" placeholder="Profile durchsuchen …" autocomplete="off" value="'+esc(pfFilter)+'">';
+  function sec(title,list,name,canDel,empty){
+    var rows=list.map(function(x,i){return pfMatch(x)?prow(x,name,i,canDel):'';}).filter(Boolean);
+    var s='<p class="lbl">'+title+(list.length?' ('+list.length+')':'')+'</p>';
+    if(!list.length)return s+(empty?'<p class="hint">'+empty+'</p>':'');
+    if(!rows.length)return s+'<p class="hint">Kein Treffer.</p>';
+    return s+'<div class="plist">'+rows.slice(0,400).join('')+'</div>';
+  }
+  h+=sec('Favoriten',favs,'fav',true,'Öffne ein Profil und tippe oben auf den Stern, dann erscheint es hier.');
+  h+=sec('Zuletzt angesehen',recent,'rec',true,'Noch keine Profile geöffnet.');
+  h+='<p class="lbl">Folge ich</p>';
+  [['x','X',logins.x],['instagram','Instagram',logins.instagram]].forEach(function(a){
+    var f=follows[a[0]],n=f&&f.users?f.users.length:0;
+    h+='<div class="box"><div class="row" style="justify-content:space-between;align-items:center"><b>'+a[1]+(n?' · '+n+' Profile':'')+'</b>'+
+      (a[2]?'<button class="btn sm" data-act="pfload" data-k="'+a[0]+'"'+(pfBusy[a[0]]?' disabled':'')+'>'+(pfBusy[a[0]]?'<span class="spin"></span>Lade …':n?'Aktualisieren':'Liste laden')+'</button>':'<button class="btn sm pri" data-act="login" data-k="'+a[0]+'">Anmelden</button>')+'</div>'+
+      (f&&f.err?'<div class="err">'+esc(f.err)+'</div>':'')+
+      (f&&f.t&&n?'<small class="hint">Stand: '+dateDE(f.t)+'</small>':'')+'</div>';
+    if(n){var rows=f.users.map(function(x,i){return pfMatch(x)?prow(x,a[0],i,false):'';}).filter(Boolean);
+      h+=rows.length?'<div class="plist">'+rows.slice(0,600).join('')+'</div>':'<p class="hint">Kein Treffer.</p>';}
+  });
+  h+='<div class="box"><div class="row" style="justify-content:space-between;align-items:center"><b>Telegram</b>'+
+    (logins.telegram?'<button class="btn sm" data-act="tgchats">Meine Chats</button>':'<button class="btn sm pri" data-act="login" data-k="telegram">Anmelden</button>')+'</div>'+
+    '<small class="hint">Öffentliche Kanäle gehen auch ohne Anmeldung: Link t.me/kanal einfügen.</small></div>';
+  $('#main').innerHTML=h+'</div>';
+  var qi=$('#pfq');if(qi)qi.addEventListener('input',function(){pfFilter=qi.value;var pos=qi.selectionStart;renderProfiles();var q2=$('#pfq');if(q2){q2.focus();try{q2.setSelectionRange(pos,pos);}catch(e){}}});
+  hydrateLazy();
+}
+var lazyIO=null;
+function hydrateLazy(){
+  var ims=document.querySelectorAll('.plist img[data-src]');
+  if(!('IntersectionObserver' in window)){hydrate();return;}
+  if(!lazyIO)lazyIO=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;var im=e.target;lazyIO.unobserve(im);var u=im.getAttribute('data-src');im.removeAttribute('data-src');thumbData(u).then(function(d){if(d)im.src=d;else im.remove();});});},{rootMargin:'300px'});
+  Array.prototype.forEach.call(ims,function(im){lazyIO.observe(im);});
+}
+function xUser(r){
+  if(!r)return null;if(r.result)r=r.result;
+  if(r.__typename&&r.__typename!=='User')return null;
+  var lg=r.legacy||{},core=r.core||{},h=core.screen_name||lg.screen_name;
+  if(!h)return null;
+  return {p:'x',id:String(r.rest_id||''),handle:h,name:core.name||lg.name||h,avatar:(r.avatar&&r.avatar.image_url)||lg.profile_image_url_https||''};
+}
+async function xFollowingList(){
+  var tw=decodeURIComponent(((await L.cookie({url:'https://x.com',name:'twid'}))||{}).value||'');
+  var me=(tw.match(/u=(\d+)/)||[])[1];
+  if(!me)throw new Error('LOGIN:x');
+  var all=[],seen={},cursor=null;
+  for(var page=0;page<15;page++){
+    var vars={userId:me,count:100,includePromotedContent:false};if(cursor)vars.cursor=cursor;
+    var j=await xGql('Following',vars),next=null,added=0;
+    (function walk(o){
+      if(!o||typeof o!=='object')return;
+      if(Array.isArray(o)){for(var i=0;i<o.length;i++)walk(o[i]);return;}
+      if(o.user_results){var u=xUser(o.user_results);if(u&&!seen[u.handle.toLowerCase()]){seen[u.handle.toLowerCase()]=1;all.push(u);added++;}}
+      if(o.cursorType==='Bottom'&&o.value)next=o.value;
+      for(var k in o)if(k!=='user_results')walk(o[k]);
+    })(j);
+    if(!next||!added||next===cursor)break;
+    cursor=next;
+  }
+  return all;
+}
+async function igFollowingList(){
+  var me=((await L.cookie({url:'https://www.instagram.com',name:'ds_user_id'}))||{}).value||'';
+  if(!me)throw new Error('LOGIN:instagram');
+  var all=[],seen={},max='';
+  for(var page=0;page<25;page++){
+    var r=await igRaw('https://www.instagram.com/api/v1/friendships/'+me+'/following/?count=100'+(max?'&max_id='+encodeURIComponent(max):''));
+    if(r.status!==200){if(all.length)break;throw new Error(r.status===429?'Instagram bremst gerade. Versuch es in 15 bis 30 Minuten nochmal.':'Instagram gibt die Liste nicht heraus ('+igWhy(r)+'). Nutze solange die Favoriten.');}
+    var j;try{j=JSON.parse(r.body);}catch(e){throw new Error('Instagram-Antwort nicht lesbar. Nutze solange die Favoriten.');}
+    (j.users||[]).forEach(function(u){var h=u.username;if(!h||seen[h])return;seen[h]=1;all.push({p:'instagram',id:String(u.pk||u.id||''),handle:h,name:u.full_name||h,avatar:u.profile_pic_url||''});});
+    if(!j.next_max_id||!(j.users||[]).length)break;
+    max=j.next_max_id;
+  }
+  return all;
+}
+async function pfLoad(site){
+  if(pfBusy[site])return;pfBusy[site]=1;if(tab==='prof')renderProfiles();
+  var f=follows[site]||{};
+  try{
+    var users=site==='x'?await xFollowingList():await igFollowingList();
+    users.sort(function(a,b){return String(a.name).localeCompare(String(b.name),'de');});
+    follows[site]={t:Date.now(),users:users};
+    toast(users.length+' Profile geladen.');
+  }catch(e){
+    var m=errText(e);
+    if(/^LOGIN:/.test(m)){f.err='Bitte zuerst unter Einstellungen › Konten anmelden.';}
+    else f.err=m;
+    follows[site]=f;
+  }
+  delete pfBusy[site];
+  try{save('fl-follows',follows);}catch(e){}
+  if(tab==='prof')renderProfiles();
+}
+
 /* ================= Ansichten ================= */
-function go(t){tab=t;Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});render();$('#main').scrollTop=0;}
+function go(t){tab=t;save('fl-tab',t);if(t==='load'&&(lastLater||tgLater)&&!cur&&!busy){var ll=lastLater,tl=tgLater;lastLater=null;tgLater=null;setTimeout(function(){if(tl)tgOpenById(tl.tg,tl.title);else{var u=$('#url');if(u)u.value=ll;lookup(ll);}},0);}Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});render();$('#main').scrollTop=0;}
 document.getElementById('bnav').addEventListener('click',function(e){var b=e.target.closest('button[data-tab]');if(b)go(b.dataset.tab);});
-function render(){if(tab==='load')renderLoad();else renderList();}
+function render(){if(tab==='load')renderLoad();else if(tab==='prof')renderProfiles();else renderList();}
 
 function renderLoad(){
   var inp=$('#url'),val=inp?inp.value:'';
@@ -1766,7 +1929,7 @@ document.addEventListener('click',async function(e){
       var u2=$('#url');if(u2)u2.value=r.text.trim();
       if(detect(r.text))lookup(r.text);else toast('In der Zwischenablage ist kein Link.');
       break;}
-    case 'clear':if(igPr){igPr=null;L.grabStop().catch(function(){});}cur=null;lastErr='';needLogin='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
+    case 'clear':save('fl-last',null);if(igPr){igPr=null;L.grabStop().catch(function(){});}cur=null;lastErr='';needLogin='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
     case 'q':cur.sel[i]=+b.dataset.j;renderLoad();break;
     case 'dl':dl(i);break;
     case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(m.kind!=='audio'&&(!d||d.state==='err'))dl(j);});break;
@@ -1827,10 +1990,14 @@ document.addEventListener('click',async function(e){
     case 'tgqrcancel':tgQrCancel();break;
     case 'tgqrapp':L.openUrl({url:tgL.qrLink}).catch(function(){toast('Telegram-App nicht gefunden. Scanne den Code mit einem zweiten Gerät.',6000);});break;
     case 'tgphoneway':tgL.qrStop=true;if(tgL.c){tgL.c.disconnect().catch(function(){});tgL.c=null;}tgSheet('phone');break;
-    case 'tgopen':{var dd=tgDialogs[i];if(!dd)break;closeSheet();if(igPr){igPr=null;L.grabStop().catch(function(){});}
+    case 'tgopen':{var dd=tgDialogs[i];if(!dd)break;closeSheet();save('fl-last',{tg:String(dd.entity.id),title:dd.title||dd.name||''});if(igPr){igPr=null;L.grabStop().catch(function(){});}
       lastErr='';needLogin='';cur=tgProfileFor(dd.entity,dd.title||dd.name);go('load');await xProfileMore();
       for(var tt=0;tt<3;tt++){if(cur&&cur.kind==='profile'&&profVisible(cur).length<9&&!cur.done&&!cur.err)await xProfileMore();}
       break;}
+    case 'fav':if(cur&&cur.kind==='profile'){toggleFav(cur);b.classList.toggle('on',isFav(cur));}break;
+    case 'popen':{var pl=pfList(b.dataset.l),px=pl[i];if(px){go('load');openRef(px);}break;}
+    case 'pdel':{e.stopPropagation();var dl0=b.dataset.l==='fav'?favs:recent;dl0.splice(i,1);save(b.dataset.l==='fav'?'fl-favs':'fl-recent',dl0);renderProfiles();break;}
+    case 'pfload':pfLoad(b.dataset.k);break;
     case 'upd':closeSheet();checkUpdate(true);break;
     case 'updgo':doUpdate();break;
   }
@@ -1856,12 +2023,19 @@ async function checkClip(){
     lookup(t);
   }catch(e){}
 }
+(function(){var t0=load('fl-tab','load');if(t0==='prof'||t0==='list'||t0==='load')tab=t0;Array.prototype.forEach.call(document.querySelectorAll('.bnav button'),function(b){if(b.dataset.tab===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});})();
 render();
+function restoreLast(){
+  var l=load('fl-last',null);if(!l)return;
+  if(l.tg){if(tab==='load')tgOpenById(l.tg,l.title);else tgLater=l;return;}
+  if(l.text){var u=$('#url');if(u)u.value=l.text;if(tab==='load')lookup(l.text);else lastLater=l.text;}
+}
+var lastLater=null,tgLater=null;
 setTimeout(function(){$('#splash').classList.add('hide');},900);
 if(L){
   refreshLogins();
   try{L.addListener('shared',function(e){takeShared(e&&e.text);});}catch(x){}
-  L.getShared().then(function(r){if(r&&r.text)takeShared(r.text);else setTimeout(checkClip,700);}).catch(function(){});
+  L.getShared().then(function(r){if(r&&r.text)takeShared(r.text);else{restoreLast();setTimeout(checkClip,1500);}}).catch(function(){restoreLast();});
   document.addEventListener('visibilitychange',function(){if(!document.hidden)setTimeout(checkClip,400);});
 }
 if(isNative()&&set.autoUpd){

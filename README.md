@@ -19,6 +19,8 @@ Zusätzlich:
 - **Telegram:** öffentliche Kanäle ohne Anmeldung; mit Telegram-Anmeldung (QR-Code) auch eigene private Kanäle, Gruppen und Chats. Gesperrte Chats („Speichern beschränken“) bleiben gesperrt.
 - **Profile (X und Instagram):** Link zu einem Profil einfügen (x.com/name oder instagram.com/name), alle Videos als Raster sehen, auswählen und viele auf einmal laden (Anmeldung in der App nötig)
 - **Vorschau:** Videos vor dem Laden in der App ansehen, nach oben wischen = nächstes Video (auch YouTube/Reddit mit Ton), direkt aus der Vorschau laden
+- **Reiter „Profile“:** Favoriten (Stern), zuletzt angesehen, „Folge ich“ von X und Instagram, Telegram-Chats – antippen und die Videos sehen
+- beim Neustart wird das zuletzt Angesehene wieder geöffnet
 - Liste „Meine Downloads“: abspielen, teilen, Post öffnen, löschen
 
 Die Daten kommen direkt von den Seiten; als Ersatz FxTwitter, vxTwitter und TikWM. Keine Werbung. YouTube und Instagram ändern ihre Schnittstellen öfter, dann hilft ein App-Update.
