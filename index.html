@@ -261,7 +261,7 @@ function abs(u,base){try{return new URL(htmlDec(u),base).toString();}catch(e){re
 function pLabel(w,h){w=+w||0;h=+h||0;if(!w||!h)return '';return Math.min(w,h)+'p';}
 function uniq(list,key){var s={};return list.filter(function(x){var k=key(x);if(!k||s[k])return false;s[k]=1;return true;});}
 
-var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',web:'Webseite'};
+var PLAT={x:'X',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',youtube:'YouTube',telegram:'Telegram',web:'Webseite'};
 var DESK='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var L=plug('Loader');
 if(L){try{L.addListener('progress',function(e){
@@ -305,12 +305,14 @@ function platOf(u){
   if(/(^|\.)(facebook\.com|fb\.watch|fb\.com)$/.test(h))return 'facebook';
   if(/(^|\.)(reddit\.com|redd\.it)$/.test(h))return 'reddit';
   if(/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(h))return 'youtube';
+  if(/^(t\.me|telegram\.me|telegram\.dog)$/.test(h))return 'telegram';
   return 'web';
 }
 function detect(t){
   var id=findXId(t);if(id)return {p:'x',id:id};
   var pn=xProfileName(t);if(pn)return {p:'xprofile',name:pn};
   var ipn=igProfileName(t);if(ipn)return {p:'igprofile',name:ipn};
+  var tpn=tgChannelName(t);if(tpn)return {p:'tgprofile',name:tpn};
   var us=urlsIn(t);
   for(var i=0;i<us.length;i++){var p=platOf(us[i]);if(p&&p!=='web'&&p!=='x')return {p:p,url:us[i]};}
   for(i=0;i<us.length;i++){if(platOf(us[i])==='web')return {p:'web',url:us[i]};}
@@ -625,6 +627,90 @@ async function getYouTube(url){
   throw new Error('YouTube gibt das Video gerade nicht heraus'+(lastWhy?' ('+lastWhy.slice(0,120)+')':'')+'. YouTube ändert das oft, ein App-Update hilft meistens.');
 }
 
+/* ================= Telegram (öffentliche Kanäle) ================= */
+var TGRES={joinchat:1,addstickers:1,addemoji:1,share:1,proxy:1,socks:1,iv:1,c:1,s:1,addlist:1,login:1,setlanguage:1,confirmphone:1,bg:1,addtheme:1,invoice:1,boost:1};
+function tgChannelName(t){
+  var us=urlsIn(t);
+  for(var i=0;i<us.length;i++){
+    if(platOf(us[i])!=='telegram')continue;
+    var m=us[i].match(/^https:\/\/(?:t\.me|telegram\.me|telegram\.dog)\/(?:s\/)?([A-Za-z][A-Za-z0-9_]{3,31})\/?(?:[?#].*)?$/i);
+    if(m&&!TGRES[m[1].toLowerCase()])return m[1];
+  }
+  return null;
+}
+function tgSecs(t){var p=String(t||'').split(':').map(Number),s=0;p.forEach(function(x){s=s*60+(x||0);});return s;}
+function tgText(h){return htmlDec(String(h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'')).trim();}
+// Ein Beitrag aus dem Telegram-HTML lesen
+function tgParse(chunk){
+  var media=[],m,re;
+  var thumbs=[];re=/tgme_widget_message_video_thumb"[^>]*background-image:url\('([^']+)'\)/g;while((m=re.exec(chunk)))thumbs.push(htmlDec(m[1]));
+  var durs=[];re=/<time[^>]*message_video_duration[^>]*>\s*([\d:]+)\s*</g;while((m=re.exec(chunk)))durs.push(tgSecs(m[1]));
+  var vi=0;re=/<video\b[^>]*\bsrc="([^"]+)"/g;
+  while((m=re.exec(chunk))){
+    var tag=m[0];
+    media.push({kind:'video',gif:/js-message_gif|message_gif/.test(chunk.slice(Math.max(0,m.index-400),m.index+tag.length)),thumb:thumbs[vi]||'',dur:durs[vi]||0,variants:[{url:htmlDec(m[1]),label:'Video'}]});
+    vi++;
+  }
+  re=/tgme_widget_message_photo_wrap[^"]*"[^>]*?background-image:url\('([^']+)'\)/g;
+  while((m=re.exec(chunk))){var u=htmlDec(m[1]);media.push({kind:'image',thumb:u,variants:[{url:u,label:'Original',ext:/\.png/i.test(u)?'png':'jpg'}]});}
+  var big=(chunk.match(/message_media_not_supported_label/g)||[]).length;
+  var text=tgText((chunk.match(/tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/)||[])[1]);
+  var post=(chunk.match(/data-post="([^"]+)"/)||[])[1]||'';
+  return {post:post,text:text,media:media,big:big};
+}
+function tgHead(b){
+  var title=tgText((b.match(/tgme_channel_info_header_title[^>]*>([\s\S]*?)<\/div>/)||b.match(/tgme_widget_message_owner_name[^>]*>([\s\S]*?)<\/a>/)||b.match(/<meta property="og:title" content="([^"]*)"/)||[])[1]);
+  var av=(b.match(/tgme_page_photo_image[^>]*>\s*<img src="([^"]+)"/)||b.match(/tgme_widget_message_user_photo[^>]*>\s*<img src="([^"]+)"/)||[])[1];
+  return {title:title,avatar:av?htmlDec(av):''};
+}
+async function getTelegram(url){
+  if(/t\.me\/(?:c|joinchat)\/|t\.me\/\+/.test(url))throw new Error('Das ist ein privater Telegram-Chat oder eine private Gruppe. Fox Loader kann nur öffentliche Kanäle laden. Speichere das Video dort direkt in der Telegram-App.');
+  var m=url.match(/(?:t\.me|telegram\.me|telegram\.dog)\/(?:s\/)?([A-Za-z][A-Za-z0-9_]{3,31})\/(\d+)/i);
+  if(!m)throw new Error('Das ist kein Link zu einem Telegram-Beitrag. Er sieht so aus: t.me/kanal/123');
+  var ch=m[1],id=m[2];
+  var r=await get('https://t.me/'+ch+'/'+id+'?embed=1&mode=tme');
+  var b=r.body||'';
+  if(r.status!==200)throw new Error('Telegram antwortet mit '+r.status);
+  var p=tgParse(b),h=tgHead(b);
+  if(!p.media.length){
+    if(p.big)throw new Error('Das Video ist zu groß für die öffentliche Telegram-Ansicht. Telegram gibt es nur in der Telegram-App heraus.');
+    if(/tgme_widget_message_error|Post not found/i.test(b))throw new Error('Beitrag nicht gefunden. Ist der Kanal privat?');
+  }
+  return {id:ch+'_'+id,text:p.text,name:h.title||ch,handle:ch,avatar:h.avatar,media:p.media,link:'https://t.me/'+ch+'/'+id};
+}
+async function getTgProfile(name){
+  var r=await get('https://t.me/s/'+name);
+  var b=r.body||'';
+  if(r.status!==200)throw new Error('Telegram antwortet mit '+r.status);
+  if(!/tgme_channel_info|tgme_widget_message_wrap/.test(b)){
+    if(/tgme_page_extra/.test(b)&&/members|subscribers|Mitglieder/i.test(b))throw new Error('Das ist eine Gruppe oder ein Kanal ohne öffentliche Vorschau. Fox Loader kann nur öffentliche Kanäle lesen.');
+    throw new Error('Telegram-Kanal @'+name+' nicht gefunden oder nicht öffentlich.');
+  }
+  var h=tgHead(b);
+  var pr={kind:'profile',p:'telegram',dl:{},sel:{},only:'video',items:[],seen:{},cursor:null,done:false,loading:false,firstHtml:b,
+    user:{id:name,name:h.title||name,handle:name,avatar:h.avatar,count:0,prot:false}};
+  return pr;
+}
+async function tgProfilePage(pr){
+  var b=pr.firstHtml;pr.firstHtml=null;
+  if(!b){var r=await get('https://t.me/s/'+pr.user.handle+(pr.cursor?'?before='+pr.cursor:''));if(r.status!==200)throw new Error('Telegram antwortet mit '+r.status);b=r.body||'';}
+  var parts=b.split('class="tgme_widget_message_wrap').slice(1);
+  var posts=parts.map(tgParse).filter(function(x){return x.post;});
+  posts.reverse();
+  var minId=null;
+  posts.forEach(function(p){
+    var id=+(p.post.split('/')[1]||0);if(id&&(minId===null||id<minId))minId=id;
+    p.media.forEach(function(m,idx){
+      var key=p.post.replace(/\W/g,'_')+'-'+idx;if(pr.seen[key])return;
+      pr.seen[key]=1;
+      pr.items.push({key:key,tid:p.post.split('/')[1],idx:idx,multi:p.media.length>1,text:p.text,m:m,link:'https://t.me/'+p.post});
+    });
+  });
+  if(!posts.length||minId===null||minId<=1||String(minId)===String(pr.cursor))pr.done=true;
+  pr.cursor=minId;
+  pr.big=(pr.big||0)+posts.reduce(function(a,p){return a+p.big;},0);
+}
+
 /* ================= Andere Seiten ================= */
 async function getWeb(url){
   var direct=url.match(/\.(mp4|m4v|mov|jpe?g|png|gif|webp|mp3|m4a)(\?|#|$)/i);
@@ -722,7 +808,7 @@ async function xProfileMore(){
   var pr=cur;if(!pr||pr.kind!=='profile'||pr.loading||pr.done)return;
   pr.loading=true;pr.err='';renderLoad();
   try{
-    if(pr.p==='instagram'){await igProfilePage(pr);}else{
+    if(pr.p==='instagram'){await igProfilePage(pr);}else if(pr.p==='telegram'){await tgProfilePage(pr);}else{
     var vars={userId:pr.user.id,count:40,includePromotedContent:false,withClientEventToken:false,withBirdwatchNotes:false,withVoice:true};
     if(pr.cursor)vars.cursor=pr.cursor;
     var j=await xGql('UserMedia',vars);
@@ -999,6 +1085,7 @@ function renderProfile(pr){
   if(vis.length){
     h+=profBarHtml(pr)+'<div class="grid">'+vis.map(function(it){return '<div class="tile'+(pr.sel[it.key]?' on':'')+'" data-act="tprev" data-tile="'+it.key+'" role="button" aria-label="'+(it.m.kind==='video'?'Video ansehen':'Bild ansehen')+'">'+tileInner(pr,it)+'</div>';}).join('')+'</div>';
   }else if(pr.done&&!pr.loading&&!pr.err)h+='<div class="empty"><b>Keine '+(pr.only==='video'?'Videos':'Medien')+' gefunden</b></div>';
+  if(pr.p==='telegram'&&pr.big)h+='<p class="note">'+pr.big+' Video'+(pr.big>1?'s sind':' ist')+' zu groß für die öffentliche Telegram-Ansicht und fehlen hier. Die gibt es nur in der Telegram-App.</p>';
   if(pr.err)h+='<div class="err">'+esc(pr.err)+'</div>';
   if(pr.loading)h+='<div class="note" style="text-align:center"><span class="spin"></span> Lade Beiträge …</div>';
   else if(!pr.done)h+='<button class="btn wide" data-act="pmore">Mehr laden ('+pr.items.length+' bisher)</button>';
@@ -1049,9 +1136,9 @@ async function lookup(text,fromShare){
     if(!d)throw new Error('Das ist kein Link. Kopiere in der App „Link kopieren“ und füge ihn hier ein.');
     if(d.p==='short'){var rr=await get(d.url,{method:'HEAD'});d=detect(rr.url);if(!d)throw new Error('Der Kurzlink führt nirgendwo hin.');}
     if(d.p==='x'&&!d.id){var xi=findXId(d.url),xn=xProfileName(d.url);if(xn){d={p:'xprofile',name:xn};}else if(!xi)throw new Error('Das ist kein Link zu einem Post oder Profil auf X.');else d.id=xi;}
-    if(d.p==='xprofile'||d.p==='igprofile'){
-      cur=d.p==='xprofile'?await getXProfile(d.name):await getIgProfile(d.name);busy=false;render();await xProfileMore();
-      if(cur&&cur.kind==='profile'&&!profVisible(cur).length&&!cur.done&&!cur.err)await xProfileMore();
+    if(d.p==='xprofile'||d.p==='igprofile'||d.p==='tgprofile'){
+      cur=d.p==='xprofile'?await getXProfile(d.name):d.p==='igprofile'?await getIgProfile(d.name):await getTgProfile(d.name);busy=false;render();await xProfileMore();
+      for(var tries=0;tries<(cur&&cur.p==='telegram'?4:1);tries++){if(cur&&cur.kind==='profile'&&profVisible(cur).length<9&&!cur.done&&!cur.err)await xProfileMore();}
       return;
     }
     var tw;
@@ -1062,6 +1149,7 @@ async function lookup(text,fromShare){
       case 'facebook':tw=await getFacebook(d.url);break;
       case 'reddit':tw=await getReddit(d.url);break;
       case 'youtube':tw=await getYouTube(d.url);break;
+      case 'telegram':tw=await getTelegram(d.url);break;
       default:tw=await getWeb(d.url);
     }
     tw.p=tw.p||(d.p==='reddit'&&tw.link&&/youtube/.test(tw.link)?'youtube':d.p);
@@ -1158,7 +1246,7 @@ function renderLoad(){
     '<div class="inrow"><input type="text" id="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Link einfügen" value="'+esc(val)+'" aria-label="Link zum Beitrag">'+
     '<button class="btn" data-act="paste" aria-label="Aus Zwischenablage einfügen">'+ic('paste')+'</button></div>'+
     '<button class="btn pri wide" data-act="go"'+(busy?' disabled':'')+'>'+(busy?'<span class="spin"></span>Suche Video …':ic('down')+'Laden')+'</button>'+
-    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>andere Seiten</span></div></div>';
+    '<div class="plats"><span>X</span><span>TikTok</span><span>Instagram</span><span>Facebook</span><span>Reddit</span><span>YouTube</span><span>Telegram</span><span>andere Seiten</span></div></div>';
 
   if(lastErr)h+='<div class="err">'+esc(lastErr)+'</div>';
   if(needLogin){
@@ -1204,7 +1292,7 @@ function renderLoad(){
     });
   }else if(!busy&&!lastErr&&!needLogin){
     h+='<div class="how"><div><b>1</b>In der App auf Teilen tippen</div><div><b>2</b>„Fox Loader“ wählen oder Link kopieren</div><div><b>3</b>Video ist in der Galerie</div></div>'+
-      '<p class="note">Funktioniert mit öffentlichen Beiträgen: Videos, Reels, Storys, GIFs und Bilder, auch mehrere in einem Beitrag. Neu: Link zu einem X- oder Instagram-Profil einfügen (z. B. x.com/name oder instagram.com/name), dann siehst du alle Videos des Kontos und kannst viele auf einmal laden. Dafür und für manche Instagram- und Facebook-Beiträge brauchst du eine Anmeldung (Einstellungen › Konten).</p>';
+      '<p class="note">Funktioniert mit öffentlichen Beiträgen: Videos, Reels, Storys, GIFs und Bilder, auch mehrere in einem Beitrag. Neu: Link zu einem X- oder Instagram-Profil oder einem Telegram-Kanal einfügen (z. B. x.com/name, instagram.com/name, t.me/kanal), dann siehst du alle Videos des Kontos und kannst viele auf einmal laden. Dafür und für manche Instagram- und Facebook-Beiträge brauchst du eine Anmeldung (Einstellungen › Konten).</p>';
   }
   $('#main').innerHTML=h+'</div>';
   hydrate();
