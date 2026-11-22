@@ -17,7 +17,7 @@ Zusätzlich:
 - andere Seiten: Fox Loader sucht MP4-Videos auf der Seite
 - Kurzlinks (t.co, vm.tiktok.com, fb.watch, redd.it, youtu.be)
 - **X-Profile:** Link zu einem Profil einfügen (x.com/name), alle Videos als Raster sehen, auswählen und viele auf einmal laden (X-Anmeldung in der App nötig)
-- **Vorschau:** Videos vor dem Laden in der App ansehen (auch YouTube/Reddit mit Ton), direkt aus der Vorschau laden
+- **Vorschau:** Videos vor dem Laden in der App ansehen, nach oben wischen = nächstes Video (auch YouTube/Reddit mit Ton), direkt aus der Vorschau laden
 - Liste „Meine Downloads“: abspielen, teilen, Post öffnen, löschen
 
 Die Daten kommen direkt von den Seiten; als Ersatz FxTwitter, vxTwitter und TikWM. Keine Werbung. YouTube und Instagram ändern ihre Schnittstellen öfter, dann hilft ein App-Update.

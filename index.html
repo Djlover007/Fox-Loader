@@ -815,7 +815,7 @@ function renderProfile(pr){
     '<div class="tx"><b>'+esc(u.name)+'</b><small>@'+esc(u.handle)+(u.count?' · '+u.count+' Medien':'')+'</small></div>'+
     '<button class="ib" data-act="clear" aria-label="Schließen">'+ic('x')+'</button></div>'+
     '<div class="chips"><button class="chip" data-act="ponly" data-k="video" aria-pressed="'+(pr.only==='video')+'">Nur Videos</button><button class="chip" data-act="ponly" data-k="all" aria-pressed="'+(pr.only==='all')+'">Videos und Bilder</button></div>'+
-    '<small class="hint">Antippen = Vorschau ansehen. Kreis oben rechts = auswählen. Qualität: '+(set.q==='best'?'beste':set.q==='small'?'kleinste':'bis 720p')+' (Einstellungen).</small></div>';
+    '<small class="hint">Antippen = Vorschau (im Player nach oben wischen = nächstes Video). Kreis oben rechts = auswählen. Qualität: '+(set.q==='best'?'beste':set.q==='small'?'kleinste':'bis 720p')+' (Einstellungen).</small></div>';
   if(u.prot&&!vis.length&&pr.done)h+='<div class="err">Das Profil ist geschützt. Du siehst die Videos nur, wenn du dem Konto folgst.</div>';
   if(vis.length){
     h+=profBarHtml(pr)+'<div class="grid">'+vis.map(function(it){return '<div class="tile'+(pr.sel[it.key]?' on':'')+'" data-act="tprev" data-tile="'+it.key+'" role="button" aria-label="'+(it.m.kind==='video'?'Video ansehen':'Bild ansehen')+'">'+tileInner(pr,it)+'</div>';}).join('')+'</div>';
@@ -840,16 +840,24 @@ async function previewMedia(m,v,title,onLoad,headers){
     var box=$('.pimg');if(box)box.innerHTML=d?'<img src="'+d+'" alt="">':'<small class="hint">Vorschau nicht verfügbar</small>';
     return;
   }
-  try{
-    var o={url:v.url,title:title||'Vorschau'};
-    if(v.audio)o.audio=v.audio;
-    var h=v.headers||headers||m.headers;if(h)o.headers=h;
-    if(v.cookies)o.cookies=true;
-    var r=await L.preview(o);
-    if(r&&r.action==='download')onLoad();
-  }catch(e){toast('Vorschau geht nicht: '+errText(e).slice(0,120));}
+  await previewList([{m:m,v:v,title:title,headers:headers,onLoad:onLoad}],0);
 }
-var pvCb=null;
+var pvCb=null,pvList=null;
+// Mehrere Videos im Player: nach oben/unten wischen wechselt das Video, "Laden" speichert das aktuelle
+async function previewList(list,start){
+  if(!list.length)return;
+  pvList=list;
+  try{
+    var r=await L.preview({start:start,items:list.map(function(x){
+      var o={url:x.v.url,title:x.title||'Vorschau',done:!!x.done};
+      if(x.v.audio)o.audio=x.v.audio;
+      var h=x.v.headers||x.headers||x.m.headers;if(h)o.headers=h;
+      return o;
+    })});
+  }catch(e){toast('Vorschau geht nicht: '+errText(e).slice(0,120));}
+  pvList=null;
+}
+if(L){try{L.addListener('previewDownload',function(e){var x=pvList&&pvList[e.index];if(x&&x.onLoad){x.onLoad();toast('Wird geladen …',1500);}});}catch(x){}}
 
 /* ================= Laden ================= */
 async function lookup(text,fromShare){
@@ -1161,10 +1169,19 @@ document.addEventListener('click',async function(e){
       if(pd&&pd.state==='done'){L.play({uri:pd.uri,mime:pd.mime}).catch(function(){toast('Datei nicht gefunden.');});break;}
       var pit=cur.items.filter(function(x){return x.key===pk;})[0];if(!pit)break;
       var pr0=cur;
-      previewMedia(pit.m,pit.m.variants[pickQ(pit.m.variants)],'@'+cur.user.handle+(pit.text?' · '+pit.text.replace(/\s*https:\/\/t\.co\/\w+\s*$/,''):''),function(){if(cur===pr0)profQueue([pk],true);});
+      function ptitle(x){return '@'+pr0.user.handle+(x.text?' · '+x.text.replace(/\s*https:\/\/t\.co\/\w+\s*$/,''):'');}
+      if(pit.m.kind==='image'){previewMedia(pit.m,pit.m.variants[0],ptitle(pit),function(){if(cur===pr0)profQueue([pk],true);});break;}
+      var vids=profVisible(pr0).filter(function(x){return x.m.kind==='video';});
+      var st0=vids.indexOf(pit);
+      previewList(vids.map(function(x){var dd=pr0.dl[x.key];return {m:x.m,v:x.m.variants[pickQ(x.m.variants)],title:ptitle(x),done:!!(dd&&dd.state!=='err'),onLoad:function(){if(cur===pr0)profQueue([x.key],true);}};}),Math.max(0,st0));
       break;}
-    case 'pv':{if(!cur||!cur.tw)break;var pm=cur.tw.media[i];if(!pm)break;var pi=i;
-      previewMedia(pm,pm.variants[cur.sel[i]||0],(cur.tw.name||PLAT[cur.tw.p]||'')+(cur.tw.text?' · '+cur.tw.text:''),function(){dl(pi);});
+    case 'pv':{if(!cur||!cur.tw)break;var pm=cur.tw.media[i];if(!pm)break;var pi=i,tw0=cur;
+      var ttl=(cur.tw.name||PLAT[cur.tw.p]||'')+(cur.tw.text?' · '+cur.tw.text:'');
+      if(pm.kind==='image'){previewMedia(pm,pm.variants[cur.sel[i]||0],ttl,function(){dl(pi);});break;}
+      var lst=[],st1=0;
+      cur.tw.media.forEach(function(mm,j){if(mm.kind==='image')return;if(j===pi)st1=lst.length;var dd=tw0.dl[tw0.tw.id+'-'+j];
+        lst.push({m:mm,v:mm.variants[tw0.sel[j]||0],title:ttl+(mm.kind==='audio'?' (nur Ton)':''),done:!!(dd&&dd.state!=='err'),onLoad:function(){if(cur===tw0)dl(j);}});});
+      previewList(lst,st1);
       break;}
     case 'pvload':closeSheet();if(pvCb){var cb=pvCb;pvCb=null;cb();}break;
     case 'pall':profVisible(cur).forEach(function(x){var d=cur.dl[x.key];if(!d||d.state==='err')cur.sel[x.key]=1;});renderLoad();break;

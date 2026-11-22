@@ -24,7 +24,9 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.TypedValue;
+import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.WebSettings;
@@ -48,6 +50,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -65,6 +68,7 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -72,6 +76,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.json.JSONObject;
 
 // Fox Loader: Links von X, TikTok, Instagram, Facebook, Reddit, YouTube auslesen,
 // Videos/Bilder/Ton in die Galerie laden, Video und Ton zusammenfuegen, teilen, abspielen.
@@ -495,22 +501,49 @@ public class LoaderPlugin extends Plugin {
     @SuppressLint("UnsafeOptInUsageError")
     @PluginMethod
     public void preview(final PluginCall call) {
-        final String url = call.getString("url", "");
-        final String audio = call.getString("audio", null);
-        final String title = call.getString("title", "Vorschau");
+        final List<JSONObject> items = new ArrayList<>();
+        try {
+            JSArray arr = call.getArray("items", null);
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    items.add(arr.getJSONObject(i));
+                }
+            }
+            if (items.isEmpty()) {
+                JSONObject one = new JSONObject();
+                one.put("url", call.getString("url", ""));
+                one.put("audio", call.getString("audio", null));
+                one.put("title", call.getString("title", "Vorschau"));
+                JSObject h = call.getObject("headers", null);
+                if (h != null) {
+                    one.put("headers", h);
+                }
+                items.add(one);
+            }
+        } catch (Exception e) {
+            call.reject("Liste nicht lesbar");
+            return;
+        }
+        final int start = Math.max(0, Math.min(items.size() - 1, call.getInt("start", 0)));
         final boolean canLoad = !Boolean.FALSE.equals(call.getBoolean("download", true));
-        final Req r = reqOf(call);
+        final boolean cookies = Boolean.TRUE.equals(call.getBoolean("cookies", false));
         final Activity act = getActivity();
-        if (act == null || url == null || !url.startsWith("https://")) {
-            call.reject("Ungueltige Adresse");
+        if (act == null) {
+            call.reject("Keine Ansicht");
             return;
         }
         act.runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    final String[] action = {"close"};
-                    final Dialog d = new Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+                    final int n = items.size();
+                    final int[] idx = {start};
+                    final boolean[] done = new boolean[n];
+                    for (int i = 0; i < n; i++) {
+                        done[i] = items.get(i).optBoolean("done", false);
+                    }
+                    final ExoPlayer[] P = new ExoPlayer[1];
+
                     LinearLayout root = new LinearLayout(act);
                     root.setOrientation(LinearLayout.VERTICAL);
                     root.setBackgroundColor(Color.BLACK);
@@ -525,55 +558,63 @@ public class LoaderPlugin extends Plugin {
                     close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
                     close.setBackgroundColor(Color.TRANSPARENT);
                     bar.addView(close, new LinearLayout.LayoutParams(dp(act, 52), dp(act, 48)));
-                    TextView t = new TextView(act);
-                    t.setText(title);
+                    final TextView t = new TextView(act);
                     t.setTextColor(Color.WHITE);
                     t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
                     t.setMaxLines(2);
                     t.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                    Button load = new Button(act);
-                    load.setText("\u2193 Laden");
+                    final Button load = new Button(act);
                     load.setAllCaps(false);
                     load.setTextColor(Color.WHITE);
                     load.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-                    load.setBackgroundColor(Color.rgb(232, 100, 12));
                     load.setPadding(dp(act, 16), 0, dp(act, 16), 0);
                     if (canLoad) {
                         bar.addView(load, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(act, 44)));
                     }
                     root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-                    HashMap<String, String> hdr = new HashMap<>();
-                    String ua = UA;
-                    Iterator<String> it = r.headers.keys();
-                    while (it.hasNext()) {
-                        String k = it.next();
-                        if ("User-Agent".equalsIgnoreCase(k)) {
-                            ua = r.headers.getString(k);
-                        } else {
-                            hdr.put(k, r.headers.getString(k));
+                    // Quellen bauen (jede mit eigenen Kopfzeilen; Bild+Ton zusammengesetzt)
+                    List<MediaSource> srcs = new ArrayList<>();
+                    for (JSONObject it : items) {
+                        HashMap<String, String> hdr = new HashMap<>();
+                        String ua = UA;
+                        JSONObject h = it.optJSONObject("headers");
+                        if (h != null) {
+                            Iterator<String> ks = h.keys();
+                            while (ks.hasNext()) {
+                                String k = ks.next();
+                                if ("User-Agent".equalsIgnoreCase(k)) {
+                                    ua = h.optString(k, UA);
+                                } else {
+                                    hdr.put(k, h.optString(k, ""));
+                                }
+                            }
                         }
-                    }
-                    if (r.cookies) {
-                        String ck = webCookies(url);
-                        if (!ck.isEmpty()) {
-                            hdr.put("Cookie", ck);
+                        String url = it.optString("url", "");
+                        if (cookies) {
+                            String ck = webCookies(url);
+                            if (!ck.isEmpty()) {
+                                hdr.put("Cookie", ck);
+                            }
                         }
-                    }
-                    DefaultHttpDataSource.Factory hf = new DefaultHttpDataSource.Factory()
-                            .setUserAgent(ua)
-                            .setAllowCrossProtocolRedirects(true)
-                            .setConnectTimeoutMs(20000)
-                            .setReadTimeoutMs(30000)
-                            .setDefaultRequestProperties(hdr);
-                    ProgressiveMediaSource.Factory pf = new ProgressiveMediaSource.Factory(hf);
-                    MediaSource src = pf.createMediaSource(MediaItem.fromUri(url));
-                    if (audio != null && audio.startsWith("https://")) {
-                        src = new MergingMediaSource(src, pf.createMediaSource(MediaItem.fromUri(audio)));
+                        DefaultHttpDataSource.Factory hf = new DefaultHttpDataSource.Factory()
+                                .setUserAgent(ua)
+                                .setAllowCrossProtocolRedirects(true)
+                                .setConnectTimeoutMs(20000)
+                                .setReadTimeoutMs(30000)
+                                .setDefaultRequestProperties(hdr);
+                        ProgressiveMediaSource.Factory pf = new ProgressiveMediaSource.Factory(hf);
+                        MediaSource src = pf.createMediaSource(MediaItem.fromUri(url));
+                        String audio = it.isNull("audio") ? "" : it.optString("audio", "");
+                        if (audio.startsWith("https://")) {
+                            src = new MergingMediaSource(src, pf.createMediaSource(MediaItem.fromUri(audio)));
+                        }
+                        srcs.add(src);
                     }
                     final ExoPlayer player = new ExoPlayer.Builder(act).build();
-                    player.setMediaSource(src);
+                    P[0] = player;
+                    player.setMediaSources(srcs, start, 0);
                     player.setRepeatMode(Player.REPEAT_MODE_ONE);
                     player.prepare();
                     player.setPlayWhenReady(true);
@@ -583,24 +624,97 @@ public class LoaderPlugin extends Plugin {
                     pv.setKeepScreenOn(true);
                     root.addView(pv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-                    final TextView err = new TextView(act);
-                    err.setTextColor(Color.rgb(255, 170, 150));
-                    err.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                    err.setPadding(dp(act, 16), dp(act, 8), dp(act, 16), dp(act, 16));
-                    err.setVisibility(android.view.View.GONE);
-                    root.addView(err, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    final TextView info = new TextView(act);
+                    info.setTextColor(Color.rgb(200, 200, 200));
+                    info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                    info.setGravity(Gravity.CENTER);
+                    info.setPadding(dp(act, 16), dp(act, 8), dp(act, 16), dp(act, 14));
+                    root.addView(info, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                    final Runnable upd = new Runnable() {
+                        @Override
+                        public void run() {
+                            int i = idx[0];
+                            String title = items.get(i).optString("title", "Vorschau");
+                            t.setText(n > 1 ? (i + 1) + " / " + n + "  \u00b7  " + title : title);
+                            load.setText(done[i] ? "\u2713 Geladen" : "\u2193 Laden");
+                            load.setBackgroundColor(done[i] ? Color.rgb(23, 138, 90) : Color.rgb(232, 100, 12));
+                            info.setTextColor(Color.rgb(200, 200, 200));
+                            info.setText(n > 1 ? "Nach oben wischen = n\u00e4chstes Video \u00b7 nach unten = vorheriges" : "");
+                            info.setVisibility(n > 1 ? android.view.View.VISIBLE : android.view.View.GONE);
+                        }
+                    };
+                    upd.run();
+
                     player.addListener(new Player.Listener() {
                         @Override
                         public void onPlayerError(PlaybackException e) {
-                            err.setText("Vorschau geht hier nicht (" + e.getErrorCodeName() + "). Laden klappt trotzdem meistens.");
-                            err.setVisibility(android.view.View.VISIBLE);
+                            info.setVisibility(android.view.View.VISIBLE);
+                            info.setTextColor(Color.rgb(255, 170, 150));
+                            info.setText("Vorschau geht hier nicht (" + e.getErrorCodeName() + "). Laden klappt trotzdem meistens." + (n > 1 ? "\nWeiterwischen zum n\u00e4chsten Video." : ""));
+                        }
+
+                        @Override
+                        public void onMediaItemTransition(MediaItem mi, int reason) {
+                            int c = player.getCurrentMediaItemIndex();
+                            if (c >= 0 && c < n) {
+                                idx[0] = c;
+                                upd.run();
+                            }
                         }
                     });
 
+                    final GestureDetector gd = new GestureDetector(act, new GestureDetector.SimpleOnGestureListener() {
+                        @Override
+                        public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
+                            if (e1 == null || n < 2) {
+                                return false;
+                            }
+                            float dy = e2.getY() - e1.getY();
+                            float dx = e2.getX() - e1.getX();
+                            if (Math.abs(dy) < dp(act, 70) || Math.abs(dy) < Math.abs(dx) * 1.3f || Math.abs(vy) < 500) {
+                                return false;
+                            }
+                            int nx = idx[0] + (dy < 0 ? 1 : -1);
+                            if (nx < 0 || nx >= n) {
+                                info.setVisibility(android.view.View.VISIBLE);
+                                info.setTextColor(Color.rgb(255, 210, 120));
+                                info.setText(nx < 0 ? "Das ist das erste Video." : "Das war das letzte Video.");
+                                return true;
+                            }
+                            idx[0] = nx;
+                            P[0].seekTo(nx, 0);
+                            P[0].setPlayWhenReady(true);
+                            upd.run();
+                            return true;
+                        }
+                    });
+
+                    final Dialog d = new Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
+                        @Override
+                        public boolean dispatchTouchEvent(MotionEvent ev) {
+                            if (gd.onTouchEvent(ev)) {
+                                MotionEvent c = MotionEvent.obtain(ev);
+                                c.setAction(MotionEvent.ACTION_CANCEL);
+                                super.dispatchTouchEvent(c);
+                                c.recycle();
+                                return true;
+                            }
+                            return super.dispatchTouchEvent(ev);
+                        }
+                    };
+
                     close.setOnClickListener(v -> d.dismiss());
                     load.setOnClickListener(v -> {
-                        action[0] = "download";
-                        d.dismiss();
+                        int i = idx[0];
+                        if (done[i]) {
+                            return;
+                        }
+                        done[i] = true;
+                        upd.run();
+                        JSObject o = new JSObject();
+                        o.put("index", i);
+                        notifyListeners("previewDownload", o);
                     });
                     d.setOnDismissListener(di -> {
                         try {
@@ -610,7 +724,8 @@ public class LoaderPlugin extends Plugin {
                             // egal
                         }
                         JSObject o = new JSObject();
-                        o.put("action", action[0]);
+                        o.put("action", "close");
+                        o.put("index", idx[0]);
                         call.resolve(o);
                     });
                     d.setContentView(root);
