@@ -255,7 +255,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function ic(n){return '<svg class="i"><use href="#i-'+n+'"/></svg>';}
 function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-var set=Object.assign({q:'best',autoClip:true,shareDl:true,autoUpd:true},load('fl-set',{}));
+var set=Object.assign({q:'best',autoClip:true,shareDl:true,autoUpd:true,adblock:true},load('fl-set',{}));
 var hist=load('fl-hist',[]);
 var tab='load', cur=null, busy=false, lastErr='', needLogin='', lastClip=load('fl-clip',''), logins={instagram:false,facebook:false,x:false,telegram:!!(load('fl-tg',{}).session)};
 function saveSet(){save('fl-set',set);}
@@ -1955,7 +1955,7 @@ async function toMp3(k,v,name,headers){
 async function browseSite(url){
   if(!L)return;
   try{
-    var r=await L.browse({url:url});
+    var r=await L.browse({url:url,adblock:set.adblock!==false});
     await refreshLogins();
     if(r&&r.action==='load'&&r.url){go('load');var u=$('#url');if(u)u.value=r.url;lookup(r.url);}
   }catch(e){toast(errText(e));}
@@ -2069,6 +2069,7 @@ async function settingsSheet(){
     '<div class="srow"><b>Qualität vorauswählen</b><div class="chips">'+q('best','Beste')+q('mid','Bis 720p')+q('small','Kleinste')+'</div><small>Du kannst sie bei jedem Video noch ändern.</small></div>'+
     '<div class="srow line"><div><b>Beim Teilen sofort laden</b><br><small>Teilen an Fox Loader speichert direkt</small></div><input type="checkbox" class="sw" id="shareDl"'+(set.shareDl?' checked':'')+' aria-label="Beim Teilen sofort laden"></div>'+
     '<div class="srow line"><div><b>Kopierten Link erkennen</b><br><small>Beim Öffnen schaut Fox Loader in die Zwischenablage</small></div><input type="checkbox" class="sw" id="autoClip"'+(set.autoClip?' checked':'')+' aria-label="Kopierten Link erkennen"></div>'+
+    '<div class="srow line"><div><b>Werbeblocker im Browser</b><br><small>Blockt Werbung, Pop-ups und Tracker auf den Seiten in Fox Loader</small></div><input type="checkbox" class="sw" id="adblock"'+(set.adblock!==false?' checked':'')+' aria-label="Werbeblocker"></div>'+
     '<p class="lbl" style="margin:6px 0 0">Konten</p>'+accRow('x','X')+accRow('instagram','Instagram')+accRow('facebook','Facebook')+accRow('telegram','Telegram')+
     '<small class="hint">Nur nötig für Profile und Beiträge, die man ohne Anmeldung nicht sieht. Das Passwort gibst du direkt bei X, Instagram oder Facebook ein, Fox Loader speichert es nicht. Tipp: lieber ein Zweitkonto nehmen.</small>'+
     (isNative()?'<button class="srow" style="border:0;text-align:left" data-act="upd"><b>App-Update</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Tippen zum Prüfen'+(upd?' · Neu: '+upd.ver:'')+'</small></button>'+
@@ -2076,7 +2077,7 @@ async function settingsSheet(){
     '<div class="srow"><b>So funktioniert es</b><small>Fox Loader liest die Daten des Beitrags direkt bei der jeweiligen Seite und lädt die Datei auf dein Handy. Bei YouTube und Reddit kommen Bild und Ton getrennt, Fox Loader fügt sie auf dem Handy zusammen. Klappt X oder TikTok nicht direkt, fragt Fox Loader FxTwitter, vxTwitter oder TikWM.</small></div>'+
     '<div class="srow"><b>Nur für dich</b><small>Videos anderer sind für den privaten Gebrauch. Die Rechte bleiben bei den Urhebern, also nicht als eigene wieder hochladen.</small></div>'+
     '<p class="hint" style="text-align:center">Fox Loader · Design by <b style="color:var(--accent)">Mr.Fox</b></p>');
-  ['shareDl','autoClip','autoUpd'].forEach(function(k){var el=$('#'+k);if(el)el.addEventListener('change',function(e){set[k]=e.target.checked;saveSet();});});
+  ['shareDl','autoClip','autoUpd','adblock'].forEach(function(k){var el=$('#'+k);if(el)el.addEventListener('change',function(e){set[k]=e.target.checked;saveSet();});});
 }
 
 /* ================= App-Update über GitHub ================= */

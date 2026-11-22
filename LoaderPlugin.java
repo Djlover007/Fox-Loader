@@ -616,6 +616,106 @@ public class LoaderPlugin extends Plugin {
     private WebView bv = null;
     private String bvHost = "";
 
+    // ---- Werbeblocker: blockt Anfragen an bekannte Werbe- und Tracker-Adressen ----
+    private static final String[] AD_BUILTIN = {
+        "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com", "pagead2.googlesyndication.com",
+        "google-analytics.com", "googletagmanager.com", "googletagservices.com", "adnxs.com", "taboola.com", "outbrain.com",
+        "criteo.com", "criteo.net", "amazon-adsystem.com", "moatads.com", "pubmatic.com", "rubiconproject.com", "openx.net",
+        "smartadserver.com", "adform.net", "adcolony.com", "applovin.com", "scorecardresearch.com", "quantserve.com",
+        "exoclick.com", "exosrv.com", "exdynsrv.com", "trafficjunky.net", "trafficjunky.com", "juicyads.com", "popads.net",
+        "popcash.net", "propellerads.com", "adsterra.com", "tsyndicate.com", "realsrv.com", "magsrv.com", "a-ads.com",
+        "adskeeper.com", "mgid.com", "onclickads.net", "trafficfactory.biz", "traffichaus.com", "ero-advertising.com",
+        "adxpansion.com", "plugrush.com", "hilltopads.net", "clickadu.com", "galaksion.com", "adspyglass.com", "bidgear.com",
+        "trafficstars.com", "tsyndicate.net", "twinrdsrv.com", "adtng.com", "adsco.re", "clickaine.com", "pemsrv.com",
+        "dtscout.com", "dtscdn.com", "highperformanceformat.com", "profitablecpmrate.com", "effectivegatecpm.com",
+        "ad-maven.com", "admaven.com", "monetag.com", "rtmark.net", "acint.net", "adsessionserv.com", "lijit.com",
+        "zeropark.com", "richpush.co", "pushame.com", "notix.io", "push-sdk.com", "onesignal.com", "yandex.ru/ads",
+        "adsrvr.org", "casalemedia.com", "teads.tv", "sharethrough.com", "3lift.com", "bidswitch.net", "media.net",
+        "adroll.com", "ads.yahoo.com", "advertising.com", "zedo.com", "revcontent.com", "yieldmo.com", "contextweb.com"
+    };
+    private static final Set<String> adHosts = Collections.synchronizedSet(new HashSet<String>());
+    private static volatile boolean adListLoaded = false;
+    private int adCount = 0;
+
+    private void loadAdList() {
+        if (adListLoaded) {
+            return;
+        }
+        adListLoaded = true;
+        for (String h : AD_BUILTIN) {
+            adHosts.add(h);
+        }
+        new Thread(() -> {
+            File f = new File(getContext().getFilesDir(), "adhosts.txt");
+            try {
+                boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 7L * 24 * 3600 * 1000;
+                if (!fresh) {
+                    HttpURLConnection c = open("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", null, null);
+                    if (c.getResponseCode() == 200) {
+                        File tmp = new File(getContext().getFilesDir(), "adhosts.tmp");
+                        InputStream in = c.getInputStream();
+                        FileOutputStream fo = new FileOutputStream(tmp);
+                        byte[] b = new byte[65536];
+                        int n;
+                        while ((n = in.read(b)) > 0) {
+                            fo.write(b, 0, n);
+                        }
+                        fo.close();
+                        in.close();
+                        tmp.renameTo(f);
+                    }
+                    c.disconnect();
+                }
+            } catch (Exception ignored) {
+                // ohne Internet bleibt die eingebaute Liste
+            }
+            try {
+                if (f.exists()) {
+                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(new FileInputStream(f), "UTF-8"));
+                    String line;
+                    HashSet<String> tmpSet = new HashSet<>();
+                    while ((line = br.readLine()) != null) {
+                        if (line.startsWith("0.0.0.0 ")) {
+                            String h = line.substring(8).trim();
+                            int sp = h.indexOf(' ');
+                            if (sp > 0) {
+                                h = h.substring(0, sp);
+                            }
+                            if (!h.isEmpty() && !h.equals("0.0.0.0")) {
+                                tmpSet.add(h.toLowerCase());
+                            }
+                        }
+                    }
+                    br.close();
+                    adHosts.addAll(tmpSet);
+                }
+            } catch (Exception ignored) {
+                // egal
+            }
+        }).start();
+    }
+
+    private boolean isAd(String host, String pageHost) {
+        if (host == null) {
+            return false;
+        }
+        String h = host.toLowerCase();
+        // die Seite selbst nie blocken
+        if (!pageHost.isEmpty() && (h.equals(pageHost) || h.endsWith("." + pageHost))) {
+            return false;
+        }
+        while (true) {
+            if (adHosts.contains(h)) {
+                return true;
+            }
+            int dot = h.indexOf('.');
+            if (dot < 0 || h.indexOf('.', dot + 1) < 0) {
+                return false;
+            }
+            h = h.substring(dot + 1);
+        }
+    }
+
     private static String hostOf(String u) {
         try {
             String h = new URL(u).getHost().toLowerCase();
@@ -629,10 +729,14 @@ public class LoaderPlugin extends Plugin {
     @PluginMethod
     public void browse(final PluginCall call) {
         final String url = call.getString("url", "");
+        final boolean adblock = !Boolean.FALSE.equals(call.getBoolean("adblock", true));
         final Activity act = getActivity();
         if (act == null || url == null || !url.startsWith("https://")) {
             call.reject("Ungueltige Adresse");
             return;
+        }
+        if (adblock) {
+            loadAdList();
         }
         act.runOnUiThread(() -> {
             try {
@@ -685,6 +789,12 @@ public class LoaderPlugin extends Plugin {
                 t.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 t.setText(bv.getUrl() == null ? url : bv.getUrl());
                 bar.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                final TextView shield = new TextView(act);
+                shield.setTextColor(Color.rgb(120, 220, 160));
+                shield.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                shield.setPadding(dp(act, 6), 0, dp(act, 8), 0);
+                shield.setText(adblock ? "\uD83D\uDEE1 " + adCount : "");
+                bar.addView(shield);
                 Button load = new Button(act);
                 load.setText("\u2193 Laden");
                 load.setAllCaps(false);
@@ -697,6 +807,27 @@ public class LoaderPlugin extends Plugin {
                 root.addView(bv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
                 bv.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest req) {
+                        if (adblock && !req.isForMainFrame() && isAd(req.getUrl().getHost(), bvHost)) {
+                            adCount++;
+                            shield.post(() -> shield.setText("\uD83D\uDEE1 " + adCount));
+                            return new android.webkit.WebResourceResponse("text/plain", "utf-8", new java.io.ByteArrayInputStream(new byte[0]));
+                        }
+                        return null;
+                    }
+
+                    @Override
+                    public void onPageFinished(WebView view, String u) {
+                        if (adblock) {
+                            // uebliche Werbeflaechen ausblenden
+                            view.evaluateJavascript("(function(){if(document.getElementById('foxab'))return;var s=document.createElement('style');s.id='foxab';"
+                                    + "s.textContent='[id^=\"ad-\"],[id^=\"ads-\"],[class*=\"advert\"],[class*=\"ad-banner\"],[class*=\"adsbox\"],[class*=\"ad-container\"],"
+                                    + "[class*=\"sponsor\"],iframe[src*=\"ads\"],ins.adsbygoogle,.exo-native-widget,.remove-ads,#video-ad,.video-ad{display:none!important}';"
+                                    + "(document.head||document.documentElement).appendChild(s);})();", null);
+                        }
+                    }
+
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest req) {
                         String s = req.getUrl().toString();
