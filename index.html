@@ -769,31 +769,61 @@ function igProfileName(t){
   }
   return null;
 }
-async function igGet(url,tries){
+var IGW={'X-IG-App-ID':'936619743392459','X-ASBD-ID':'129477','X-Requested-With':'XMLHttpRequest','Accept':'*/*'};
+async function igRaw(url,tries,html){
   tries=tries||0;
   var r=null;
-  try{r=await L.webFetch({origin:'https://www.instagram.com',url:url,headers:{'X-IG-App-ID':'936619743392459','X-ASBD-ID':'129477','X-Requested-With':'XMLHttpRequest','Accept':'*/*'}});}
+  try{r=await L.webFetch({origin:'https://www.instagram.com',url:url,headers:html?{'Accept':'text/html'}:IGW});}
   catch(e){r=null;}
-  if(!r||r.status===0)r=await get(url,{headers:IGH,cookies:true});
-  if((r.status===429||r.status===0)&&tries<2){await new Promise(function(ok){setTimeout(ok,4000*(tries+1));});return await igGet(url,tries+1);}
+  if(!r||r.status===0)r=await get(url,{headers:html?{'Accept':'text/html'}:IGH,cookies:true});
+  if((r.status===429||r.status===0)&&tries<2){await new Promise(function(ok){setTimeout(ok,4000*(tries+1));});return await igRaw(url,tries+1,html);}
+  return r;
+}
+function igWhy(r){var w='';try{var j=JSON.parse(r.body);w=j.message||j.status||'';}catch(e){w=String(r.body||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,60);}return r.status+(w?' '+w:'');}
+async function igGet(url){
+  var r=await igRaw(url);
   if(r.status===401||r.status===403||/\/accounts\/login/.test(r.url||'')){
     await refreshLogins();
     if(!logins.instagram)throw new Error('LOGIN:instagram');
-    var why='';try{why=JSON.parse(r.body).message||'';}catch(e){}
-    throw new Error('Instagram lehnt den Abruf ab ('+r.status+(why?': '+why:'')+'). Öffne einmal die Instagram-App oder melde dich unter Einstellungen › Konten neu an.');
+    throw new Error('Instagram lehnt den Abruf ab ('+igWhy(r)+'). Öffne einmal die Instagram-App oder melde dich unter Einstellungen › Konten neu an.');
   }
   if(r.status===429)throw new Error('Instagram bremst dein Konto gerade (429). Öffne kurz die Instagram-App, scroll ein bisschen und versuch es in 15 bis 30 Minuten nochmal.');
-  if(r.status===404)throw new Error('Profil nicht gefunden.');
-  if(r.status!==200)throw new Error('Instagram antwortet mit '+r.status);
+  if(r.status!==200)throw new Error('Instagram antwortet mit '+igWhy(r));
   try{return JSON.parse(r.body);}catch(e){throw new Error(logins.instagram?'Instagram-Antwort nicht lesbar. Melde dich unter Einstellungen › Konten neu an.':'LOGIN:instagram');}
 }
 async function getIgProfile(name){
   if(!logins.instagram)throw new Error('LOGIN:instagram');
-  var j=await igGet('https://www.instagram.com/api/v1/users/web_profile_info/?username='+encodeURIComponent(name));
-  var u=j&&j.data&&j.data.user;
-  if(!u||!u.id)throw new Error('Profil @'+name+' nicht gefunden.');
-  return {kind:'profile',p:'instagram',dl:{},sel:{},only:'video',items:[],seen:{},cursor:null,done:false,loading:false,
-    user:{id:u.id,name:u.full_name||u.username,handle:u.username||name,avatar:u.profile_pic_url||'',count:(u.edge_owner_to_timeline_media||{}).count||0,prot:!!(u.is_private&&!u.followed_by_viewer)}};
+  var lname=name.toLowerCase(),why=[],u=null;
+  function mk(id,full,user,pic,count,priv){return {kind:'profile',p:'instagram',dl:{},sel:{},only:'video',items:[],seen:{},cursor:null,done:false,loading:false,
+    user:{id:String(id),name:full||user||name,handle:user||name,avatar:pic||'',count:count||0,prot:!!priv}};}
+  // Weg 1: Profil-Info
+  try{
+    var r=await igRaw('https://www.instagram.com/api/v1/users/web_profile_info/?username='+encodeURIComponent(name));
+    if(r.status===200){var j=JSON.parse(r.body);u=j&&j.data&&j.data.user;
+      if(u&&u.id)return mk(u.id,u.full_name,u.username,u.profile_pic_url,(u.edge_owner_to_timeline_media||{}).count,u.is_private&&!u.followed_by_viewer);}
+    why.push('A '+igWhy(r));
+    if(r.status===429)throw new Error('Instagram bremst dein Konto gerade (429). Öffne kurz die Instagram-App, scroll ein bisschen und versuch es in 15 bis 30 Minuten nochmal.');
+  }catch(e){if(/429/.test(errText(e)))throw e;why.push('A '+errText(e).slice(0,40));}
+  // Weg 2: Suche
+  try{
+    var r2=await igRaw('https://www.instagram.com/web/search/topsearch/?context=blended&include_reel=true&query='+encodeURIComponent(name));
+    if(r2.status===200){
+      var us=(JSON.parse(r2.body).users||[]).map(function(x){return x.user||x;});
+      var f=us.filter(function(x){return String(x.username||'').toLowerCase()===lname;})[0];
+      if(f&&(f.pk||f.pk_id||f.id))return mk(f.pk||f.pk_id||f.id,f.full_name,f.username,f.profile_pic_url,0,f.is_private);
+      why.push('B kein Treffer');
+    }else why.push('B '+igWhy(r2));
+  }catch(e){why.push('B '+errText(e).slice(0,40));}
+  // Weg 3: Profilseite lesen
+  try{
+    var r3=await igRaw('https://www.instagram.com/'+encodeURIComponent(name)+'/',0,true);
+    var b=r3.body||'';
+    var id=(b.match(/"profile_id":"(\d+)"/)||b.match(/"profilePage_(\d+)"/)||b.match(/"owner_id":"(\d+)"/)||[])[1];
+    if(!id){var rx=new RegExp('"(?:pk|id)":"(\\d+)"[^{}]{0,400}?"username":"'+name.replace(/\./g,'\\.')+'"','i');id=(b.match(rx)||[])[1];}
+    if(id){var full=(b.match(/<meta property="og:title" content="([^"(]+)/)||[])[1];return mk(id,full?htmlDec(full).trim():name,name,'',0,false);}
+    why.push('C '+r3.status+(/login/i.test(r3.url||'')?' Login':''));
+  }catch(e){why.push('C '+errText(e).slice(0,40));}
+  throw new Error('Profil @'+name+' nicht gefunden. Prüfe, ob der Name stimmt und ob das Profil in der Instagram-App aufgeht. (Instagram: '+why.join(' · ')+')');
 }
 async function igProfilePage(pr){
   var j=await igGet('https://www.instagram.com/api/v1/feed/user/'+pr.user.id+'/?count=33'+(pr.cursor?'&max_id='+encodeURIComponent(pr.cursor):''));
