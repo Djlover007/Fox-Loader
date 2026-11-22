@@ -52,6 +52,8 @@ import androidx.media3.ui.PlayerView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -474,6 +476,139 @@ public class LoaderPlugin extends Plugin {
                 c.reject("Zeitueberschreitung");
             }
         }, 45000);
+    }
+
+    // ---------------- Seite im Hintergrund oeffnen und mitlesen ----------------
+    // Oeffnet z. B. ein Instagram-Profil unsichtbar wie ein Browser und reicht alle Daten,
+    // die die Seite selbst laedt und die "match" enthalten, an die App weiter.
+
+    private WebView gv = null;
+    private String gMatch = "";
+
+    public class GrabBridge {
+        @JavascriptInterface
+        public void data(String text) {
+            JSObject o = new JSObject();
+            o.put("text", text);
+            notifyListeners("grab", o);
+        }
+
+        @JavascriptInterface
+        public void url(String u) {
+            JSObject o = new JSObject();
+            o.put("url", u);
+            notifyListeners("grabUrl", o);
+        }
+    }
+
+    private String hookJs() {
+        return "(function(){if(window.__foxHook)return;window.__foxHook=1;var M=" + JSONObject.quote(gMatch) + ";"
+                + "function send(t){try{if(t&&typeof t==='string'&&t.indexOf(M)>=0)FoxGrab.data(t);}catch(e){}}"
+                + "try{var of=window.fetch;window.fetch=function(){return of.apply(this,arguments).then(function(r){try{r.clone().text().then(send).catch(function(){});}catch(e){}return r;});};}catch(e){}"
+                + "try{var os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){var x=this;"
+                + "x.addEventListener('load',function(){try{if(!x.responseType||x.responseType==='text')send(x.responseText);}catch(e){}});return os.apply(this,arguments);};}catch(e){}"
+                + "})();";
+    }
+
+    private static final String SCAN_JS = "(function(){try{FoxGrab.url(location.href);var s=document.scripts;for(var i=0;i<s.length;i++){var t=s[i].textContent;"
+            + "if(t&&t.indexOf(window.__foxM||'')>=0)FoxGrab.data(t);}}catch(e){}})();";
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface", "RequiresFeature"})
+    @PluginMethod
+    public void grabStart(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final String match = call.getString("match", "");
+        final Activity act = getActivity();
+        if (act == null || url == null || !url.startsWith("https://")) {
+            call.reject("Ungueltige Adresse");
+            return;
+        }
+        act.runOnUiThread(() -> {
+            try {
+                gMatch = match;
+                if (gv == null) {
+                    gv = new WebView(act);
+                    WebSettings st = gv.getSettings();
+                    st.setJavaScriptEnabled(true);
+                    st.setDomStorageEnabled(true);
+                    st.setUserAgentString(DESK_UA);
+                    st.setMediaPlaybackRequiresUserGesture(true);
+                    st.setLoadsImagesAutomatically(false);
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(gv, true);
+                    gv.addJavascriptInterface(new GrabBridge(), "FoxGrab");
+                    gv.setWebViewClient(new WebViewClient() {
+                        @Override
+                        public void onPageCommitVisible(WebView view, String u) {
+                            view.evaluateJavascript(hookJs(), null);
+                        }
+
+                        @Override
+                        public void onPageFinished(WebView view, String u) {
+                            view.evaluateJavascript(hookJs(), null);
+                            view.evaluateJavascript("window.__foxM=" + JSONObject.quote(gMatch) + ";" + SCAN_JS, null);
+                            view.postDelayed(() -> {
+                                if (gv != null) {
+                                    gv.evaluateJavascript(SCAN_JS, null);
+                                }
+                            }, 2500);
+                        }
+                    });
+                    // hinter der App-Oberflaeche einhaengen, damit die Seite eine echte Groesse hat
+                    ViewGroup content = act.findViewById(android.R.id.content);
+                    content.addView(gv, 0, new ViewGroup.LayoutParams(dp(act, 420), dp(act, 900)));
+                }
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                    try {
+                        HashSet<String> rules = new HashSet<>();
+                        rules.add("*");
+                        WebViewCompat.addDocumentStartJavaScript(gv, hookJs(), rules);
+                    } catch (Throwable ignored) {
+                        // aeltere WebView: Haken kommt dann beim Seitenaufbau
+                    }
+                }
+                gv.loadUrl(url);
+                call.resolve();
+            } catch (Throwable e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    @PluginMethod
+    public void grabScroll(final PluginCall call) {
+        final Activity act = getActivity();
+        if (act == null) {
+            call.resolve();
+            return;
+        }
+        act.runOnUiThread(() -> {
+            if (gv != null) {
+                gv.evaluateJavascript("window.scrollBy(0,-300);setTimeout(function(){window.scrollTo(0,document.documentElement.scrollHeight);},200);", null);
+            }
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void grabStop(final PluginCall call) {
+        final Activity act = getActivity();
+        if (act == null) {
+            call.resolve();
+            return;
+        }
+        act.runOnUiThread(() -> {
+            if (gv != null) {
+                try {
+                    ViewGroup content = act.findViewById(android.R.id.content);
+                    content.removeView(gv);
+                    gv.destroy();
+                } catch (Exception ignored) {
+                    // egal
+                }
+                gv = null;
+            }
+            call.resolve();
+        });
     }
 
     // ---------------- Anmeldung (Instagram, Facebook) ----------------

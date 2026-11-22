@@ -847,7 +847,77 @@ async function igFeed(pr){
   if(r&&(r.status===401||r.status===403)){await refreshLogins();if(!logins.instagram)throw new Error('LOGIN:instagram');}
   throw new Error('Instagram gibt die Beiträge nicht heraus. Melde dich unter Einstellungen › Konten bei Instagram ab und wieder an und versuch es nochmal. ('+why.join(' · ')+')');
 }
+/* Instagram-Profil über die echte Seite im Hintergrund mitlesen */
+var IGM='xdt_api__v1__feed__user_timeline_graphql_connection',igPr=null;
+function igCut(text,from){
+  var i=text.indexOf('{',from);if(i<0)return null;
+  var d=0,q=false,e=false;
+  for(var k=i;k<text.length;k++){
+    var c=text[k];
+    if(q){if(e)e=false;else if(c==='\\')e=true;else if(c==='"')q=false;continue;}
+    if(c==='"')q=true;else if(c==='{')d++;else if(c==='}'){d--;if(!d)return text.slice(i,k+1);}
+  }
+  return null;
+}
+function igAddNode(pr,n){
+  if(!n||!(n.code||n.pk))return 0;
+  var r=igV1(n),pk=String(n.pk||n.id||n.code),added=0;
+  r.media.forEach(function(m,idx){
+    var key=pk.replace(/\W/g,'')+'-'+idx;if(pr.seen[key])return;
+    pr.seen[key]=1;added++;
+    pr.items.push({key:key,tid:n.code||pk,idx:idx,multi:r.media.length>1,text:r.text||'',m:m,link:r.link||('https://www.instagram.com/'+pr.user.handle+'/')});
+  });
+  return added;
+}
+function igGrabText(text){
+  var pr=igPr;if(!pr||!text)return;
+  var pos=0,added=0;
+  while((pos=text.indexOf('"'+IGM+'"',pos))>=0){
+    var blob=igCut(text,pos+IGM.length+2);pos+=IGM.length+2;
+    if(!blob)continue;
+    try{
+      var c=JSON.parse(blob);
+      (c.edges||[]).forEach(function(e){added+=igAddNode(pr,e.node);});
+      if(c.page_info){pr.gotPage=true;if(c.page_info.has_next_page===false)pr.grabEnd=true;}
+    }catch(e){}
+  }
+  if(added&&cur===pr&&!pr.loading)renderLoad();
+}
+if(L){try{
+  L.addListener('grab',function(e){igGrabText(e&&e.text);});
+  L.addListener('grabUrl',function(e){if(igPr&&/accounts\/login|challenge/.test(e.url||''))igPr.grabLogin=true;});
+}catch(x){}}
 async function igProfilePage(pr){
+  var before=pr.items.length;
+  if(!pr.grab){
+    pr.grab=true;igPr=pr;pr.grabEnd=false;pr.grabLogin=false;
+    await L.grabStart({url:'https://www.instagram.com/'+encodeURIComponent(pr.user.handle)+'/',match:IGM});
+  }else{await L.grabScroll();}
+  for(var t=0;t<40;t++){
+    await new Promise(function(ok){setTimeout(ok,500);});
+    if(pr.grabLogin||cur!==pr)break;
+    if(pr.items.length>before&&t>=4)break;
+    if(pr.grabEnd&&t>=2)break;
+    if(t===10&&pr.items.length===before&&pr.grab)L.grabScroll().catch(function(){});
+  }
+  if(pr.items.length>before){pr.empty=0;if(pr.grabEnd)pr.done=true;return;}
+  if(pr.grabLogin){L.grabStop().catch(function(){});throw new Error('LOGIN:instagram');}
+  if(pr.grabEnd){pr.done=true;return;}
+  pr.empty=(pr.empty||0)+1;
+  if(before===0){
+    // Ersatz: alte Wege probieren, damit die Fehlermeldung etwas sagt
+    try{var j0=await igFeed(pr);return igFromFeed(pr,j0);}catch(e){throw new Error('Instagram zeigt auf der Profilseite keine Beiträge. Ist das Profil privat oder bist du nicht angemeldet? '+errText(e).replace(/^Instagram gibt die Beiträge nicht heraus\. /,''));}
+  }
+  if(pr.empty>=2)pr.done=true;
+}
+function igFromFeed(pr,j){
+  var added=0;
+  (j.items||[]).forEach(function(it){added+=igAddNode(pr,it);});
+  var next=j.more_available?j.next_max_id:null;
+  if(!next||!added)pr.done=true;
+  pr.cursor=next;
+}
+async function igProfilePageOld(pr){
   var j=await igFeed(pr);
   var added=0;
   (j.items||[]).forEach(function(it){
@@ -973,7 +1043,7 @@ async function lookup(text,fromShare){
   if(busy)return;
   text=String(text||'').trim();
   if(!text){toast('Füge zuerst einen Link ein.');return;}
-  busy=true;lastErr='';needLogin='';cur=null;go('load');
+  busy=true;lastErr='';needLogin='';if(igPr){igPr=null;L.grabStop().catch(function(){});}cur=null;go('load');
   try{
     var d=detect(text);
     if(!d)throw new Error('Das ist kein Link. Kopiere in der App „Link kopieren“ und füge ihn hier ein.');
@@ -1249,7 +1319,7 @@ document.addEventListener('click',async function(e){
       var u2=$('#url');if(u2)u2.value=r.text.trim();
       if(detect(r.text))lookup(r.text);else toast('In der Zwischenablage ist kein Link.');
       break;}
-    case 'clear':cur=null;lastErr='';needLogin='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
+    case 'clear':if(igPr){igPr=null;L.grabStop().catch(function(){});}cur=null;lastErr='';needLogin='';var u3=$('#url');if(u3)u3.value='';renderLoad();break;
     case 'q':cur.sel[i]=+b.dataset.j;renderLoad();break;
     case 'dl':dl(i);break;
     case 'all':cur.tw.media.forEach(function(m,j){var d=cur.dl[cur.tw.id+'-'+j];if(m.kind!=='audio'&&(!d||d.state==='err'))dl(j);});break;
