@@ -739,11 +739,29 @@ async function tgNew(sess){
   await c.connect();
   return c;
 }
+// Zeitlimit für Telegram-Anfragen (nach App-Wechsel ist die Verbindung oft tot)
+function tgWT(p,ms,what){return Promise.race([p,new Promise(function(_,no){setTimeout(function(){no(new Error('TIMEOUT:'+(what||'')));},ms);})]);}
+async function tgFresh(c){
+  if(!c)return;
+  try{await tgWT(c.invoke(new FoxTG.Api.help.GetNearestDc()),7000,'ping');return;}catch(e){}
+  try{await tgWT(c.disconnect(),3000,'disc');}catch(e){}
+  await tgWT(c.connect(),15000,'connect');
+}
+async function tgRetry(c,fn,what){
+  await tgFresh(c);
+  try{return await tgWT(fn(),25000,what);}
+  catch(e){
+    if(!/^TIMEOUT:/.test(String(e.message||'')))throw e;
+    try{await tgWT(c.disconnect(),3000,'disc');}catch(z){}
+    await tgWT(c.connect(),15000,'connect');
+    return await tgWT(fn(),25000,what);
+  }
+}
 async function tgReady(){
   var st=tgStore();
   if(!st.session||!st.apiId)throw new Error('LOGIN:telegram');
   if(!tgC)tgC=await tgNew(st.session);
-  else if(!tgC.connected){try{await tgC.connect();}catch(e){tgC=await tgNew(st.session);}}
+  else{try{await tgFresh(tgC);}catch(e){try{await tgC.disconnect();}catch(z){}tgC=await tgNew(st.session);}}
   if(!tgAuthed){
     var ok=false;try{ok=await tgC.checkAuthorization();}catch(e){ok=false;}
     if(!ok){st.session='';tgSave(st);logins.telegram=false;tgC=null;throw new Error('LOGIN:telegram');}
@@ -754,6 +772,7 @@ async function tgReady(){
 function tgErr(e){
   var m=String((e&&(e.errorMessage||e.message))||e||'');
   var s=e&&e.seconds;
+  if(/^TIMEOUT:/.test(m))return 'Telegram antwortet nicht. Prüfe deine Internetverbindung und versuch es nochmal.';
   if(/FLOOD/.test(m))return 'Telegram bremst gerade. Warte '+(s?Math.ceil(s/60)+' Minute'+(Math.ceil(s/60)>1?'n':''):'ein paar Minuten')+' und versuch es dann nochmal.';
   if(/PHONE_NUMBER_INVALID/.test(m))return 'Die Telefonnummer stimmt nicht. Bitte mit Ländervorwahl, z. B. +49 171 1234567.';
   if(/API_ID_INVALID|API_ID_PUBLISHED_FLOOD/.test(m))return 'api_id oder api_hash stimmen nicht. Bitte auf my.telegram.org nochmal genau abschreiben.';
@@ -779,7 +798,7 @@ function tgSheet(step,msg){
     '<input type="tel" id="tgphone" autocomplete="tel" placeholder="+49 …" value="'+esc(tgL.phone||'')+'">'+
     '<button class="btn pri wide" data-act="tgphone">Code anfordern</button><button class="btn wide" data-act="tgqr">Mit QR-Code (zweites Gerät)</button><button class="btn wide" data-act="tgkey">Schlüssel ändern</button>'+cancel);
   else if(step==='code')openSheet('<h3>Code eingeben</h3>'+e+
-    '<div class="srow"><small>Telegram hat dir einen Code '+(tgL.viaApp?'in der Telegram-App (Chat „Telegram“)':'per SMS')+' geschickt.</small></div>'+
+    '<div class="srow"><small>Telegram hat dir einen Code '+(tgL.viaApp?'in der Telegram-App (Chat „Telegram“)':'per SMS')+' geschickt. Tipp: Du kannst den Code auch oben in der Benachrichtigung lesen, ohne Fox Loader zu verlassen.</small></div>'+
     '<input type="text" id="tgcode" inputmode="numeric" autocomplete="one-time-code" placeholder="Code">'+
     '<button class="btn pri wide" data-act="tgcode">Anmelden</button>'+cancel);
   else if(step==='pw')openSheet('<h3>Telegram-Passwort</h3>'+e+
@@ -806,19 +825,19 @@ async function tgAct(a){
       tgL.phone=v;tgSheet('busy','Verbinde mit Telegram …');
       if(tgL.c){try{await tgL.c.disconnect();}catch(e){}}
       tgL.c=await tgNew('');
-      var r=await tgL.c.sendCode({apiId:Number(st.apiId),apiHash:String(st.apiHash)},v);
+      var c0=tgL.c,r=await tgRetry(c0,function(){return c0.sendCode({apiId:Number(st.apiId),apiHash:String(st.apiHash)},v);},'code');
       tgL.hash=r.phoneCodeHash;tgL.viaApp=r.isCodeViaApp;tgSheet('code');
     }else if(a==='tgcode'){
       v=($('#tgcode').value||'').replace(/\D/g,'');
       if(!v)return tgSheet('code','Bitte den Code eingeben.');
       tgSheet('busy','Melde an …');
       try{
-        var res=await tgL.c.invoke(new FoxTG.Api.auth.SignIn({phoneNumber:tgL.phone,phoneCodeHash:tgL.hash,phoneCode:v}));
+        var c1=tgL.c,res=await tgRetry(c1,function(){return c1.invoke(new FoxTG.Api.auth.SignIn({phoneNumber:tgL.phone,phoneCodeHash:tgL.hash,phoneCode:v}));},'signin');
         if(res&&res.className==='auth.AuthorizationSignUpRequired')return tgSheet('phone','Zu dieser Nummer gibt es kein Telegram-Konto.');
         await tgDone();
       }catch(e){
         if(/SESSION_PASSWORD_NEEDED/.test(String(e.errorMessage||e.message))){
-          tgL.pwd=await tgL.c.invoke(new FoxTG.Api.account.GetPassword());tgL.hint=tgL.pwd.hint||'';tgSheet('pw');
+          var c2=tgL.c;tgL.pwd=await tgRetry(c2,function(){return c2.invoke(new FoxTG.Api.account.GetPassword());},'pw');tgL.hint=tgL.pwd.hint||'';tgSheet('pw');
         }else throw e;
       }
     }else if(a==='tgpw'){
@@ -826,8 +845,8 @@ async function tgAct(a){
       if(tgL.pwRes){var pr2=tgL.pwRes;tgL.pwRes=null;tgSheet('busy','Prüfe Passwort …');pr2(v);return;}
       tgSheet('busy','Prüfe Passwort …');
       try{
-        var chk=await FoxTG.computeCheck(tgL.pwd,v);
-        await tgL.c.invoke(new FoxTG.Api.auth.CheckPassword({password:chk}));
+        var c3=tgL.c;
+        await tgRetry(c3,async function(){var pw2=await c3.invoke(new FoxTG.Api.account.GetPassword());var chk=await FoxTG.computeCheck(pw2,v);return await c3.invoke(new FoxTG.Api.auth.CheckPassword({password:chk}));},'checkpw');
       }catch(e){if(/PASSWORD_HASH_INVALID/.test(String(e.errorMessage||e.message))){tgL.pwd=await tgL.c.invoke(new FoxTG.Api.account.GetPassword());return tgSheet('pw','Das Passwort stimmt nicht.');}throw e;}
       await tgDone();
     }
